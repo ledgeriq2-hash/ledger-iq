@@ -1,0 +1,76 @@
+{# Expected context: admin_name, tenant_name, activation_link #}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>You're invited - Ledger IQ</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background: #f8fafc;
+      font-family: "Helvetica Neue", Arial, sans-serif;
+      color: #0f172a;
+    }
+    .container {
+      max-width: 640px;
+      margin: 0 auto;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .header {
+      background: linear-gradient(135deg, #0ea5e9, #22c55e);
+      color: #ffffff;
+      padding: 20px 24px;
+    }
+    .content {
+      padding: 24px;
+      line-height: 1.6;
+    }
+    .btn {
+      display: inline-block;
+      padding: 12px 18px;
+      background: #22c55e;
+      color: #ffffff;
+      text-decoration: none;
+      border-radius: 8px;
+      font-weight: 600;
+    }
+    .footer {
+      padding: 18px 24px;
+      background: #f8fafc;
+      color: #475569;
+      font-size: 12px;
+    }
+    a {
+      color: #0ea5e9;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1 style="margin: 0;">Ledger IQ</h1>
+      <p style="margin: 4px 0 0;">You're invited to manage {{ tenant_name }}</p>
+    </div>
+    <div class="content">
+      <p>Hi {{ admin_name }},</p>
+      <p>You've been invited as an admin for <strong>{{ tenant_name }}</strong> on Ledger IQ.</p>
+      <p>Please activate your account and set your password by clicking below:</p>
+      <p style="text-align: center; margin: 24px 0;">
+        <a class="btn" href="{{ activation_link }}" target="_blank" rel="noopener">Accept invitation</a>
+      </p>
+      <p>If the button does not work, copy and paste this link into your browser:</p>
+      <p style="word-break: break-all; color: #0ea5e9;">{{ activation_link }}</p>
+      <p>Welcome aboard!</p>
+      <p>Regards,<br />Ledger IQ Team</p>
+    </div>
+    <div class="footer">
+      You received this email because you were invited to an account on Ledger IQ.
+    </div>
+  </div>
+</body>
+</html>

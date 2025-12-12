@@ -1,0 +1,9 @@
+Welcome to {{ app_name }}!
+
+Your workspace is ready. Visit {{ frontend_url }}/login to sign in.
+
+Plan: {{ plan or "free" }}
+Tenant: {{ tenant_name }}
+
+Thanks for choosing us,
+The Ledger IQ team

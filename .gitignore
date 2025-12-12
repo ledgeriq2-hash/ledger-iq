@@ -1,0 +1,31 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Databases
+*.db
+*.sqlite
+
+# Virtual environments
+venv/
+.venv/
+
+# Python caches
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+*.pyc
+*.pyo
+.coverage
+htmlcov/
+
+# Node / build outputs
+node_modules/
+dist/
+.vite/
+build/
+
+# OS junk
+.DS_Store
+Thumbs.db

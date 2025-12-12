@@ -1,0 +1,74 @@
+{# Expected context: user_name, tenant_name, dashboard_url #}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Welcome to Ledger IQ</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background: #f8fafc;
+      font-family: "Helvetica Neue", Arial, sans-serif;
+      color: #0f172a;
+    }
+    .container {
+      max-width: 640px;
+      margin: 0 auto;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .header {
+      background: linear-gradient(135deg, #6366f1, #0ea5e9);
+      color: #ffffff;
+      padding: 20px 24px;
+    }
+    .content {
+      padding: 24px;
+      line-height: 1.6;
+    }
+    .btn {
+      display: inline-block;
+      padding: 12px 18px;
+      background: #6366f1;
+      color: #ffffff;
+      text-decoration: none;
+      border-radius: 8px;
+      font-weight: 600;
+    }
+    .footer {
+      padding: 18px 24px;
+      background: #f8fafc;
+      color: #475569;
+      font-size: 12px;
+    }
+    a {
+      color: #0ea5e9;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1 style="margin: 0;">Welcome to Ledger IQ</h1>
+      <p style="margin: 4px 0 0;">We're glad you're here</p>
+    </div>
+    <div class="content">
+      <p>Hi {{ user_name }},</p>
+      <p>Welcome to <strong>{{ tenant_name }}</strong> on Ledger IQ. Your workspace is ready.</p>
+      <p>Use the button below to go to your dashboard and explore your data:</p>
+      <p style="text-align: center; margin: 24px 0;">
+        <a class="btn" href="{{ dashboard_url }}" target="_blank" rel="noopener">Go to dashboard</a>
+      </p>
+      <p>Need help getting started? Check your onboarding checklist or contact your admin.</p>
+      <p>Regards,<br />Ledger IQ Team</p>
+    </div>
+    <div class="footer">
+      This message was sent because your account was created on Ledger IQ.
+    </div>
+  </div>
+</body>
+</html>

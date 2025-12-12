@@ -1,0 +1,24 @@
+from __future__ import annotations
+
+from fastapi import FastAPI
+
+from app.middleware.auth import AuthContextMiddleware
+from app.middleware.logging import RequestLoggingMiddleware
+from app.middleware.request_id import RequestIdMiddleware
+from app.middleware.tenant import TenantMiddleware
+
+
+def register_middlewares(app: FastAPI) -> None:
+    app.add_middleware(RequestIdMiddleware)
+    app.add_middleware(AuthContextMiddleware)
+    app.add_middleware(TenantMiddleware)
+    app.add_middleware(RequestLoggingMiddleware)
+
+
+__all__ = [
+    "register_middlewares",
+    "AuthContextMiddleware",
+    "TenantMiddleware",
+    "RequestLoggingMiddleware",
+    "RequestIdMiddleware",
+]

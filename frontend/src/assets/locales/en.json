@@ -1,0 +1,42 @@
+{
+  "app": {
+    "title": "Ledger IQ"
+  },
+  "actions": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "confirm": "Confirm",
+    "back": "Back"
+  },
+  "auth": {
+    "login": "Login",
+    "logout": "Logout",
+    "email": "Email",
+    "password": "Password",
+    "rememberMe": "Remember me",
+    "forgotPassword": "Forgot password?"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "customers": "Customers",
+    "suppliers": "Suppliers",
+    "invoices": "Invoices",
+    "reports": "Reports",
+    "settings": "Settings",
+    "profile": "Profile",
+    "notifications": "Notifications",
+    "aiOverview": "AI Overview"
+  },
+  "portal": {
+    "customer": "Customer Portal",
+    "supplier": "Supplier Portal"
+  },
+  "status": {
+    "loading": "Loading...",
+    "error": "Something went wrong",
+    "success": "Success",
+    "noData": "No data available"
+  }
+}

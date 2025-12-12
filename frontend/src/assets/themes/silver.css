@@ -1,0 +1,64 @@
+/* Import in your entry/layout once, e.g.:
+   import "./assets/themes/silver.css";
+*/
+
+body[data-color-theme="silver"] {
+  --color-primary: #6b7280;
+  --color-primary-soft: #eef1f7;
+  --color-accent: #9ca3af;
+  --color-bg: #f7f8fb;
+  --color-surface: #ffffff;
+  --color-text: #1f2937;
+  --color-border: #e5e7eb;
+}
+
+body[data-color-theme="silver"] .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.5rem 0.9rem;
+  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+  transition: transform 150ms ease, box-shadow 150ms ease, background 150ms ease;
+}
+
+body[data-color-theme="silver"] .btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(107, 114, 128, 0.12);
+}
+
+body[data-color-theme="silver"] .btn-primary {
+  background: var(--color-primary);
+  color: #f9fafb;
+  border: 1px solid #4b5563;
+  box-shadow: 0 4px 10px rgba(107, 114, 128, 0.22);
+}
+
+body[data-color-theme="silver"] .btn-primary:hover {
+  background: #4b5563;
+}
+
+body[data-color-theme="silver"] .sidebar {
+  background: linear-gradient(180deg, #f4f5f7, #eceff3);
+  color: var(--color-text);
+  border-right: 1px solid var(--color-border);
+}
+
+body[data-color-theme="silver"] .topbar {
+  background: #f9fafb;
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-text);
+}
+
+body[data-color-theme="silver"] .card {
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  padding: 1rem;
+  box-shadow: 0 10px 30px rgba(107, 114, 128, 0.08);
+}

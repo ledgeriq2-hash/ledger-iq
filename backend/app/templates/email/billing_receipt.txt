@@ -1,0 +1,14 @@
+Hi {{ recipient }},
+
+Thanks for your payment for {{ app_name }}.
+
+Amount: {{ amount }}
+Plan: {{ plan }}
+Date: {{ date }}
+
+View billing: {{ billing_url }}
+
+Questions? Reply to this email.
+
+Thank you,
+Ledger IQ Billing

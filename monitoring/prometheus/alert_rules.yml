@@ -1,0 +1,19 @@
+groups:
+  - name: backend-alerts
+    rules:
+      - alert: High5xxErrorRate
+        expr: sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High 5xx error rate"
+          description: "More than 5% of requests are failing with 5xx in the last 5m. Check backend health."
+      - alert: CeleryFailures
+        expr: rate(celery_tasks_failed_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Celery tasks failing"
+          description: "Celery task failures detected. Investigate worker logs."
