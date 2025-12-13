@@ -3,9 +3,10 @@ from __future__ import annotations
 import json
 import os
 import secrets
+from collections.abc import Sequence
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, List, Sequence
+from typing import Any
 
 from pydantic import EmailStr, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -51,6 +52,7 @@ class Settings(BaseSettings):
     debug: bool = False
 
     database_url: str = "sqlite+aiosqlite:///./ledgeriq.db"
+    redis_enabled: bool = True
     redis_url: str = "redis://localhost:6379/0"
     frontend_url: str = "http://localhost:3000"
 
@@ -60,11 +62,11 @@ class Settings(BaseSettings):
     access_token_expires_minutes: int = 30
     refresh_token_expires_days: int = 30
 
-    backend_cors_origins: List[str] = Field(default_factory=list)
+    backend_cors_origins: list[str] = Field(default_factory=list)
     sentry_dsn: str | None = None
 
     soft_launch_enabled: bool = False
-    soft_launch_tenant_slugs: List[str] = Field(default_factory=list)
+    soft_launch_tenant_slugs: list[str] = Field(default_factory=list)
     show_soft_launch_badge: bool = True
     default_plan_code: str = "free"
     allow_negative_stock: bool = False
@@ -77,6 +79,8 @@ class Settings(BaseSettings):
     # Retention (days)
     feedback_retention_days: int = 60
     error_event_retention_days: int = 30
+    gdpr_export_ttl_days: int = 7
+    gdpr_financial_retention_days: int = 0
 
     email_host: str | None = None
     email_port: int = 587

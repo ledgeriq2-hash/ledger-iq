@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import ipaddress
-from typing import Any
 
 from fastapi import HTTPException, Request, status
 
+from app.config import get_settings
 from app.core.redis import get_redis
+
+settings = get_settings()
 
 
 def _client_key(request: Request) -> str:
@@ -23,7 +25,7 @@ async def enforce_rate_limit(request: Request, scope: str, limit: int, window_se
 
     Key is derived from client IP + scope. When limit is zero or negative, limiter is disabled.
     """
-    if limit is None or limit <= 0:
+    if not settings.redis_enabled or limit is None or limit <= 0:
         return
     redis = await get_redis()
     key = f"rl:{scope}:{_client_key(request)}"

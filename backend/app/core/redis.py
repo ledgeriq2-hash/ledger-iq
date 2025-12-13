@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
-from typing import Any, Optional
 import uuid
+from datetime import UTC, datetime
+from typing import Any
 
 from redis.asyncio import Redis, from_url
 
@@ -12,12 +12,86 @@ from app.config import get_settings
 settings = get_settings()
 
 _redis_client: Redis | None = None
+_memory_redis: Any | None = None
 _redis_lock = asyncio.Lock()
+
+
+class _InMemoryRedis:
+    """Minimal async Redis-like client used when Redis is disabled."""
+
+    def __init__(self) -> None:
+        self._store: dict[str, tuple[Any, float | None]] = {}
+        self.closed = False
+
+    def _purge_if_expired(self, key: str) -> None:
+        if key not in self._store:
+            return
+        _, expires_at = self._store[key]
+        if expires_at is not None and expires_at < asyncio.get_event_loop().time():
+            self._store.pop(key, None)
+
+    async def set(self, key: str, value: Any, ex: int | None = None) -> bool:
+        expires_at = None
+        if ex is not None:
+            expires_at = asyncio.get_event_loop().time() + ex
+        self._store[key] = (value, expires_at)
+        return True
+
+    async def get(self, key: str) -> Any:
+        self._purge_if_expired(key)
+        if key not in self._store:
+            return None
+        return self._store[key][0]
+
+    async def delete(self, *keys: str) -> int:
+        deleted = 0
+        for key in keys:
+            self._purge_if_expired(key)
+            if key in self._store:
+                self._store.pop(key, None)
+                deleted += 1
+        return deleted
+
+    async def incr(self, key: str) -> int:
+        self._purge_if_expired(key)
+        current = self._store.get(key, ("0", None))[0]
+        try:
+            value = int(current)
+        except (TypeError, ValueError):
+            value = 0
+        value += 1
+        # Preserve existing expiry, if any
+        expires_at = self._store.get(key, (None, None))[1]
+        self._store[key] = (value, expires_at)
+        return value
+
+    async def expire(self, key: str, seconds: int) -> bool:
+        self._purge_if_expired(key)
+        if key not in self._store:
+            return False
+        self._store[key] = (self._store[key][0], asyncio.get_event_loop().time() + seconds)
+        return True
+
+    async def exists(self, key: str) -> int:
+        self._purge_if_expired(key)
+        return 1 if key in self._store else 0
+
+    async def getdel(self, key: str) -> Any:
+        value = await self.get(key)
+        if key in self._store:
+            self._store.pop(key, None)
+        return value
 
 
 async def get_redis() -> Redis:
     """Return a singleton Redis client."""
     global _redis_client
+
+    if not settings.redis_enabled:
+        global _memory_redis
+        if _memory_redis is None or getattr(_memory_redis, "closed", False):
+            _memory_redis = _InMemoryRedis()  # type: ignore[assignment]
+        return _memory_redis  # type: ignore[return-value]
 
     client = _redis_client
     if client is not None and getattr(client, "closed", False):
@@ -27,8 +101,13 @@ async def get_redis() -> Redis:
     if client is None:
         async with _redis_lock:
             if _redis_client is None or getattr(_redis_client, "closed", False):
-                _redis_client = from_url(settings.redis_url, encoding="utf-8", decode_responses=True)
-        client = _redis_client
+                try:
+                    _redis_client = from_url(settings.redis_url, encoding="utf-8", decode_responses=True)
+                except Exception:
+                    # Fallback to in-memory client if Redis is unreachable during init
+                    settings.redis_enabled = False
+                    _memory_redis = _InMemoryRedis()  # type: ignore[assignment]
+        client = _redis_client if settings.redis_enabled else _memory_redis
 
     if client is None:  # pragma: no cover - defensive fallback
         raise RuntimeError("Redis client could not be initialized")
@@ -43,7 +122,7 @@ async def set_value(key: str, value: Any, ex: int | None = None) -> bool:
     return bool(result)
 
 
-async def get_value(key: str) -> Optional[str]:
+async def get_value(key: str) -> str | None:
     """Get a value by key."""
     client = await get_redis()
     result = await client.get(key)
@@ -60,7 +139,7 @@ async def delete_value(key: str) -> bool:
 def _seconds_until(expires_at: datetime | None) -> int:
     if expires_at is None:
         return 0
-    delta = int((expires_at - datetime.now(timezone.utc)).total_seconds())
+    delta = int((expires_at - datetime.now(UTC)).total_seconds())
     return max(delta, 0)
 
 
