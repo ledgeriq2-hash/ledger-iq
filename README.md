@@ -14,6 +14,10 @@ Backend stack: FastAPI, SQLAlchemy async, Alembic, Celery, Redis, PostgreSQL.
 - worker: Celery worker
 - beat: Celery beat (scheduled tasks)
 
+## Redis (local)
+- Start Redis: `docker-compose up redis` (already included in `docker-compose.yml`).
+- App env: set `REDIS_URL=redis://localhost:6379/0` (defaults to this when using compose).
+
 ## Migrations
 Run inside backend container: `alembic upgrade head`.
 
