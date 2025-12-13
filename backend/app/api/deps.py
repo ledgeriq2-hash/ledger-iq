@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings as _get_settings
 from app.core.redis import (
     get_redis as _get_redis,
+)
+from app.core.redis import (
     get_user_tokens_version,
     is_token_revoked,
 )
@@ -91,16 +93,36 @@ async def get_current_tenant(
 ) -> uuid.UUID:
     """
     Determine tenant from token or explicit header.
-    Header overrides token when provided.
+    Header cannot be used to switch tenants away from the authenticated user's tenant.
     """
+    user = getattr(request.state, "user", None)
+    user_tenant = getattr(user, "tenant_id", None)
     if x_tenant_id:
         try:
-            return uuid.UUID(x_tenant_id)
+            header_tenant = uuid.UUID(x_tenant_id)
         except ValueError as exc:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid tenant header") from exc
-    user = getattr(request.state, "user", None)
-    if user and getattr(user, "tenant_id", None):
-        return user.tenant_id
+        token_tenant = user_tenant
+        if token_tenant is None:
+            auth_header = request.headers.get("Authorization")
+            if auth_header and auth_header.lower().startswith("bearer "):
+                token = auth_header.split(" ", 1)[1]
+                try:
+                    payload = decode_token(token)
+                    tenant_id_claim = payload.get("tenant_id")
+                    if tenant_id_claim:
+                        token_tenant = uuid.UUID(str(tenant_id_claim))
+                except Exception:
+                    token_tenant = None
+        if user_tenant and header_tenant != user_tenant:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant mismatch")
+        if token_tenant and header_tenant != token_tenant:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant mismatch")
+        request.state.tenant_id = header_tenant
+        return header_tenant
+    if user and user_tenant:
+        request.state.tenant_id = user_tenant
+        return user_tenant
     auth_header = request.headers.get("Authorization")
     if auth_header and auth_header.lower().startswith("bearer "):
         token = auth_header.split(" ", 1)[1]
@@ -108,7 +130,9 @@ async def get_current_tenant(
             payload = decode_token(token)
             tenant_id = payload.get("tenant_id")
             if tenant_id:
-                return uuid.UUID(str(tenant_id))
+                tenant_uuid = uuid.UUID(str(tenant_id))
+                request.state.tenant_id = tenant_uuid
+                return tenant_uuid
         except Exception:
             pass
     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Tenant context required")

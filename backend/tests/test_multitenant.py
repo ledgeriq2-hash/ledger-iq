@@ -37,3 +37,31 @@ async def test_tenant_isolation(client: AsyncClient, register_owner):
     ids_b = {c["id"] for c in list_b.json()["items"]}
     assert cust_a["id"] in ids_a and cust_a["id"] not in ids_b
     assert cust_b["id"] in ids_b and cust_b["id"] not in ids_a
+
+
+@pytest.mark.anyio
+async def test_header_cannot_switch_tenant(client: AsyncClient, register_owner):
+    owner_a = await register_owner()
+    owner_b = await register_owner()
+    token_a = owner_a["tokens"]["access_token"]
+    tenant_b_id = owner_b["tenant"]["id"]
+
+    resp = await client.get(
+        "/api/v1/customers/",
+        headers={**auth_headers(token_a), "X-Tenant-ID": tenant_b_id},
+    )
+    assert resp.status_code == 403
+
+
+@pytest.mark.anyio
+async def test_cross_tenant_user_lookup_blocked(client: AsyncClient, register_owner):
+    owner_a = await register_owner()
+    owner_b = await register_owner()
+    token_a = owner_a["tokens"]["access_token"]
+    user_b_id = owner_b["user"]["id"]
+
+    resp = await client.get(
+        f"/api/v1/users/{user_b_id}",
+        headers=auth_headers(token_a),
+    )
+    assert resp.status_code in (403, 404)
