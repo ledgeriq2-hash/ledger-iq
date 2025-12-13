@@ -48,6 +48,7 @@ Base URL: `/api/v1`. Auth uses `Authorization: Bearer <JWT>` unless noted (porta
 - `POST /inventory/movements` – body `{product_id, quantity>0, movement_type, reference_type?, reference_id?}`.
 - `GET /inventory/movements/{id}`, `PATCH /inventory/movements/{id}`, `DELETE /inventory/movements/{id}`.
 - `GET /inventory/summary` – per-product stock and valuation `{items:[{product_id, stock_quantity, valuation}], total_value}`.
+- `GET /inventory/valuation` – alias of summary for stock valuation reporting.
 
 ## Payments
 - `GET /payments/`

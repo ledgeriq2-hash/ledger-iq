@@ -15,6 +15,8 @@ class ExpenseBase(BaseSchema):
     currency: str
     expense_date: date
     description: str | None = None
+    product_id: UUID | None = None
+    quantity: Decimal | None = None
 
 
 class ExpenseCreate(ExpenseBase):

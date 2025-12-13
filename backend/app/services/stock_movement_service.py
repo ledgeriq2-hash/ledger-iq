@@ -13,6 +13,8 @@ from app.models.stock_movement import MovementType, ReferenceType, StockMovement
 from app.schemas.stock_movement import InventorySummaryItem
 from app.config import get_settings
 
+settings = get_settings()
+
 
 def _to_dict(payload: Any, *, exclude_unset: bool = False) -> dict[str, Any]:
     if hasattr(payload, "model_dump"):
@@ -128,33 +130,7 @@ async def update_movement(
     movement = await get_movement(session, tenant_id, movement_id)
     if not movement:
         return None
-
-    data = _to_dict(payload, exclude_unset=True)
-    product = await _get_product(session, tenant_id, movement.product_id)
-    if not product:
-        raise AppException(code="product_not_found", message="Product not found", http_status=404)
-
-    current_qty = Decimal(str(product.stock_quantity or 0))
-    old_qty = Decimal(str(movement.quantity))
-    old_type = movement.movement_type
-    if old_type == MovementType.IN:
-        current_qty -= old_qty
-    elif old_type == MovementType.OUT:
-        current_qty += old_qty
-    # ADJUST cannot be fully reverted without prior state; keep current_qty as-is.
-
-    if "quantity" in data and data["quantity"] is not None:
-        movement.quantity = Decimal(str(data["quantity"]))
-    if "movement_type" in data and data["movement_type"]:
-        movement.movement_type = MovementType(data["movement_type"])
-
-    new_qty = _apply_quantity(current_qty, movement.movement_type, movement.quantity)
-    await _validate_stock_balance(new_qty)
-    product.stock_quantity = new_qty
-
-    await session.commit()
-    await session.refresh(movement)
-    return movement
+    raise AppException(code="movement_immutable", message="Stock movements cannot be edited; create a new movement instead")
 
 
 async def delete_movement(session: AsyncSession, tenant_id: UUID, movement_id: UUID) -> bool:

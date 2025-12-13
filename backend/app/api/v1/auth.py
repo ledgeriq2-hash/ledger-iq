@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import secrets
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Cookie, Depends, Header, HTTPException, Request, status
 from fastapi.responses import JSONResponse
@@ -23,13 +23,20 @@ from app.core.redis import (
 )
 from app.core.security import create_access_token, create_refresh_token, decode_token
 from app.core.soft_launch import is_soft_launch_tenant
+from app.models.user import User
 from app.schemas.auth import RefreshRequest, Token
 from app.schemas.common import BaseSchema
 from app.schemas.role import RolePublic
 from app.schemas.tenant import TenantPublic
 from app.schemas.user import UserPublic
-from app.services import email_service, role_service, tenant_service, user_service, usage_service, audit_log_service
-from app.models.user import User
+from app.services import (
+    audit_log_service,
+    email_service,
+    role_service,
+    tenant_service,
+    usage_service,
+    user_service,
+)
 
 router = APIRouter(prefix="/auth")
 logger = logging.getLogger(__name__)
@@ -84,14 +91,14 @@ class CurrentUserResponse(BaseSchema):
 
 def _exp_to_datetime(exp_value: int | datetime | None, fallback_seconds: int) -> datetime:
     if isinstance(exp_value, datetime):
-        return exp_value if exp_value.tzinfo else exp_value.replace(tzinfo=timezone.utc)
+        return exp_value if exp_value.tzinfo else exp_value.replace(tzinfo=UTC)
     try:
         exp_int = int(exp_value) if exp_value is not None else None
     except (TypeError, ValueError):
         exp_int = None
     if exp_int:
-        return datetime.fromtimestamp(exp_int, tz=timezone.utc)
-    return datetime.now(timezone.utc) + timedelta(seconds=fallback_seconds)
+        return datetime.fromtimestamp(exp_int, tz=UTC)
+    return datetime.now(UTC) + timedelta(seconds=fallback_seconds)
 
 
 def _build_claims(user: User, tenant_id: uuid.UUID, token_version: int) -> dict[str, object]:
@@ -320,6 +327,8 @@ async def refresh_token(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token") from exc
 
     _ensure_refresh_token_type(decoded)
+    if not decoded.get("jti"):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
     sub = decoded.get("sub")
     tenant_id = decoded.get("tenant_id")
     if not sub or not tenant_id:
@@ -382,6 +391,8 @@ async def logout(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token") from exc
 
     _ensure_refresh_token_type(decoded)
+    if not decoded.get("jti"):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
     sub = decoded.get("sub")
     tenant_id = decoded.get("tenant_id")
     if not tenant_id or not sub:
@@ -506,6 +517,7 @@ async def reset_password(
 async def read_me(
     current_user: User = Depends(deps.get_current_active_user),
     session: AsyncSession = Depends(deps.get_db),
+    settings=Depends(deps.get_settings),
 ):
     tenant = None
     if current_user.tenant_id:

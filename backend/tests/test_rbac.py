@@ -6,6 +6,7 @@ import pytest
 from httpx import AsyncClient
 
 from app.database import async_session_maker
+from app.models.tenant_subscription import TenantSubscription
 from app.services import role_service
 
 
@@ -37,8 +38,14 @@ async def test_rbac_matrix(client: AsyncClient, register_owner):
     tenant_id = uuid.UUID(owner["tenant"]["id"])
     owner_token = owner["tokens"]["access_token"]
 
-    # Ensure roles exist
+    # Ensure roles exist and subscription is active for paid limits
     async with async_session_maker() as session:
+        subscription = await session.get(TenantSubscription, tenant_id)
+        if subscription:
+            subscription.status = "active"
+            subscription.plan_code = "pro"
+            await session.commit()
+            await session.refresh(subscription)
         admin_role = await create_role(session, tenant_id, "ADMIN")
         accountant_role = await create_role(session, tenant_id, "ACCOUNTANT")
         viewer_role = await create_role(session, tenant_id, "VIEWER")

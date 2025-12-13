@@ -105,4 +105,14 @@ async def inventory_summary(
     return InventorySummaryResponse(items=items, total_value=total_value)
 
 
+@router.get("/valuation", response_model=InventorySummaryResponse)
+async def inventory_valuation(
+    session: AsyncSession = Depends(deps.get_db),
+    tenant_id: UUID = Depends(deps.get_current_tenant),
+    _: User = Depends(deps.get_current_active_user),
+):
+    items, total_value = await stock_movement_service.summarize_inventory(session, tenant_id)
+    return InventorySummaryResponse(items=items, total_value=total_value)
+
+
 __all__ = ["router"]

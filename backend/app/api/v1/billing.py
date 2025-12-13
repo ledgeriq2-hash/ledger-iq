@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import deps
-from app.core.permissions import ADMIN, OWNER, require_roles
 from app.core.exceptions import AppException
+from app.core.permissions import ADMIN, OWNER, require_roles
 from app.schemas.billing import BillingOverviewResponse, BillingStatus, PlanPublic
 from app.schemas.common import BaseSchema
 from app.services import billing_service
@@ -73,20 +73,12 @@ async def billing_overview(
         "max_storage_mb": limits.get("storage_mb"),
     }
 
-    # Optional URLs for managing/upgrading subscription; if Stripe customer portal is not configured,
-    # fall back to a frontend billing page.
-    manage_url = f"{settings.frontend_url}/billing"
-    if getattr(subscription, "stripe_customer_id", None):
-        # If you configure Stripe portal, generate it here. Keeping placeholder for now.
-        manage_url = f"{settings.frontend_url}/billing/portal"
-    checkout_url = None
-
     return BillingOverviewResponse(
         plan=plan_info,
         usage=usage_payload,
         limits=limits_payload,
-        stripe_customer_portal_url=manage_url,
-        checkout_url=checkout_url,
+        stripe_customer_portal_url=None,
+        checkout_url=None,
         metadata={"subscription_status": getattr(subscription, "status", None)},
     )
 
@@ -113,8 +105,28 @@ async def start_checkout(
             settings,
         )
     except AppException as exc:
-        raise HTTPException(status_code=exc.http_status, detail=exc.message)
+        raise HTTPException(status_code=exc.http_status, detail=exc.message) from exc
     return checkout
+
+
+@router.post("/portal")
+async def create_portal(
+    session: AsyncSession = Depends(deps.get_db),
+    tenant_id: UUID = Depends(deps.get_current_tenant),
+    __ = Depends(deps.get_current_active_user),
+    ___ = Depends(require_roles([OWNER, ADMIN])),
+    settings=Depends(deps.get_settings),
+):
+    try:
+        portal = await billing_service.create_customer_portal_session(
+            session=session,
+            tenant_id=tenant_id,
+            return_url=f"{settings.frontend_url}/billing",
+            settings=settings,
+        )
+    except AppException as exc:
+        raise HTTPException(status_code=exc.http_status, detail=exc.message) from exc
+    return portal
 
 
 @router.post("/webhook", include_in_schema=False)
@@ -124,8 +136,11 @@ async def billing_webhook(
     stripe_signature: str | None = Header(default=None, alias="Stripe-Signature"),
 ):
     body = await request.body()
-    result = await billing_service.handle_webhook_event(session, body, stripe_signature)
-    return result
+    try:
+        result = await billing_service.handle_webhook_event(session, body, stripe_signature)
+        return result
+    except AppException as exc:
+        raise HTTPException(status_code=exc.http_status, detail=exc.message) from exc
 
 
 __all__ = ["router"]

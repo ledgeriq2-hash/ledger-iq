@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
 import uuid
-from typing import Any, Dict
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -10,7 +10,11 @@ from passlib.context import CryptContext
 from app.config import get_settings
 
 settings = get_settings()
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(
+    schemes=["bcrypt_sha256", "bcrypt"],
+    deprecated="auto",
+    bcrypt__truncate_error=False,
+)
 
 
 def get_password_hash(password: str) -> str:
@@ -45,8 +49,8 @@ def _create_token(
     additional_claims: dict[str, Any] | None = None,
     token_use: str | None = None,
 ) -> str:
-    now = datetime.now(timezone.utc)
-    payload: Dict[str, Any] = {
+    now = datetime.now(UTC)
+    payload: dict[str, Any] = {
         "sub": str(subject),
         "iat": now,
         "exp": now + expires_delta,
@@ -110,7 +114,10 @@ def decode_token(
     """
     key = secret_key or (settings.jwt_refresh_secret_key if refresh else settings.jwt_secret_key)
     try:
-        return jwt.decode(token, key, algorithms=[settings.jwt_algorithm], options=options or {})
+        decoded = jwt.decode(token, key, algorithms=[settings.jwt_algorithm], options=options or {})
+        if refresh and not decoded.get("jti"):
+            raise ValueError("Refresh token missing jti")
+        return decoded
     except JWTError as exc:
         raise ValueError("Invalid or expired token") from exc
 

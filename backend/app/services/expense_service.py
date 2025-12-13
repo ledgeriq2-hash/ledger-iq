@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.metrics import EXPENSES_CREATED
 from app.models.expense import Expense
-from app.services import journal_service
+from app.services import journal_service, stock_movement_service
 from app.services.accounting_mapping import get_account_mapping
 
 
@@ -80,6 +80,8 @@ async def get_expense(session: AsyncSession, tenant_id: UUID, expense_id: UUID) 
 
 async def create_expense(session: AsyncSession, tenant_id: UUID, payload: Any) -> Expense:
     data = _to_dict(payload)
+    product_id = data.pop("product_id", None)
+    quantity = data.pop("quantity", None)
     expense = Expense(**data, tenant_id=tenant_id)
     session.add(expense)
     await session.commit()
@@ -88,6 +90,20 @@ async def create_expense(session: AsyncSession, tenant_id: UUID, payload: Any) -
         EXPENSES_CREATED.labels(tenant_id=str(tenant_id)).inc()
     except Exception:
         pass
+    if product_id and quantity:
+        await stock_movement_service.create_movement(
+            session,
+            tenant_id,
+            {
+                "product_id": product_id,
+                "quantity": quantity,
+                "movement_type": stock_movement_service.MovementType.IN,
+                "reference_type": stock_movement_service.ReferenceType.PURCHASE,
+                "reference_id": expense.id,
+            },
+            commit=False,
+        )
+        await session.commit()
     await _post_expense_entry(session, tenant_id, expense)
     return expense
 

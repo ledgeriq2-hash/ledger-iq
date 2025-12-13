@@ -6,6 +6,7 @@ from uuid import UUID
 
 from fastapi import status
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -293,6 +294,12 @@ async def handle_webhook_event(session: AsyncSession, payload: bytes, signature:
         existing = await session.execute(select(StripeEvent).where(StripeEvent.event_id == event_id))
         if existing.scalar_one_or_none():
             return {"received": True, "event_type": event_type, "idempotent": True}
+        try:
+            session.add(StripeEvent(event_id=event_id, event_type=event_type))
+            await session.commit()
+        except IntegrityError:
+            await session.rollback()
+            return {"received": True, "event_type": event_type, "idempotent": True}
 
     tenant_id = data_object.get("metadata", {}).get("tenant_id") or data_object.get("tenant_id")
     plan_code = data_object.get("metadata", {}).get("plan_code")
@@ -343,10 +350,6 @@ async def handle_webhook_event(session: AsyncSession, payload: bytes, signature:
         subscription.cancel_at_period_end = True
         await session.commit()
         await _sync_tenant_plan(session, tenant_uuid, subscription.plan_code)
-
-    if event_id:
-        session.add(StripeEvent(event_id=event_id, event_type=event_type))
-        await session.commit()
 
     return {"received": True, "event_type": event_type}
 
