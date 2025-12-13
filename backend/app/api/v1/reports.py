@@ -6,11 +6,13 @@ from datetime import date
 from uuid import UUID
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import deps
 from app.core.permissions import ACCOUNTANT, ADMIN, OWNER, VIEWER, require_roles
 from app.models.user import User
+from app.reports.pdf import export_pdf
 from app.schemas.report import ReportCacheList, ReportRequest, ReportResponse
 from app.services import report_service
 
@@ -52,6 +54,43 @@ async def _run_and_cache_report(
     return ReportResponse(report_type=result["report_type"], data=result["data"])
 
 
+@router.get("/download/pdf")
+async def download_pdf(
+    report_type: str,
+    from_date: date | None = None,
+    to_date: date | None = None,
+    as_of_date: date | None = None,
+    session: AsyncSession = Depends(deps.get_db),
+    tenant_id: UUID = Depends(deps.get_current_tenant),
+    _: User = Depends(deps.get_current_active_user),
+):
+    params = {"from_date": from_date, "to_date": to_date, "as_of_date": as_of_date}
+
+    if report_type == "income_statement":
+        data = await report_service.get_income_statement(session, tenant_id, from_date, to_date)
+    elif report_type == "balance_sheet":
+        data = await report_service.get_balance_sheet(session, tenant_id, as_of_date)
+    elif report_type == "cashflow":
+        data = await report_service.get_cashflow_statement(session, tenant_id, from_date, to_date)
+    elif report_type == "trial_balance":
+        data = await report_service.get_trial_balance(session, tenant_id, as_of_date)
+    else:
+        data = {"note": "unknown report", "params": params}
+
+    rows = []
+    if isinstance(data, dict):
+        if "revenues" in data or "expenses" in data:
+            rows = (data.get("revenues") or []) + (data.get("expenses") or [])
+        elif "assets" in data or "liabilities" in data:
+            rows = (data.get("assets") or []) + (data.get("liabilities") or []) + (data.get("equity") or [])
+        elif "accounts" in data:
+            rows = data.get("accounts") or []
+        else:
+            rows = [data]
+    pdf_bytes = export_pdf(rows, title=f"{report_type} report")
+    return Response(content=pdf_bytes, media_type="application/pdf")
+
+
 @router.get("/cache", response_model=ReportCacheList)
 async def list_cache(
     session: AsyncSession = Depends(deps.get_db),
@@ -75,16 +114,31 @@ async def run_report(
     to_date_param = _parse_date(params.get("to_date"))
     as_of_param = _parse_date(params.get("as_of_date"))
 
+    async def income_statement():
+        return await report_service.get_income_statement(session, tenant_id, from_date_param, to_date_param)
+
+    async def balance_sheet():
+        return await report_service.get_balance_sheet(session, tenant_id, as_of_param)
+
+    async def cashflow():
+        return await report_service.get_cashflow_statement(session, tenant_id, from_date_param, to_date_param)
+
+    async def trial_balance():
+        return await report_service.get_trial_balance(session, tenant_id, as_of_param)
+
+    def fallback():
+        return {"report_type": report_type, "params": params}
+
     if report_type == "income_statement":
-        generator = lambda: report_service.get_income_statement(session, tenant_id, from_date_param, to_date_param)
+        generator = income_statement
     elif report_type == "balance_sheet":
-        generator = lambda: report_service.get_balance_sheet(session, tenant_id, as_of_param)
+        generator = balance_sheet
     elif report_type == "cashflow":
-        generator = lambda: report_service.get_cashflow_statement(session, tenant_id, from_date_param, to_date_param)
+        generator = cashflow
     elif report_type == "trial_balance":
-        generator = lambda: report_service.get_trial_balance(session, tenant_id, as_of_param)
+        generator = trial_balance
     else:
-        generator = lambda: {"report_type": report_type, "params": params}
+        generator = fallback
 
     return await _run_and_cache_report(session, tenant_id, report_type, params, generator)
 
@@ -98,7 +152,8 @@ async def income_statement(
     _: User = Depends(deps.get_current_active_user),
 ):
     params = {"from_date": from_date, "to_date": to_date}
-    generator = lambda: report_service.get_income_statement(session, tenant_id, from_date, to_date)
+    async def generator():
+        return await report_service.get_income_statement(session, tenant_id, from_date, to_date)
     return await _run_and_cache_report(session, tenant_id, "income_statement", params, generator)
 
 
@@ -110,7 +165,8 @@ async def balance_sheet(
     _: User = Depends(deps.get_current_active_user),
 ):
     params = {"as_of_date": as_of_date}
-    generator = lambda: report_service.get_balance_sheet(session, tenant_id, as_of_date)
+    async def generator():
+        return await report_service.get_balance_sheet(session, tenant_id, as_of_date)
     return await _run_and_cache_report(session, tenant_id, "balance_sheet", params, generator)
 
 
@@ -123,7 +179,8 @@ async def cashflow_statement(
     _: User = Depends(deps.get_current_active_user),
 ):
     params = {"from_date": from_date, "to_date": to_date}
-    generator = lambda: report_service.get_cashflow_statement(session, tenant_id, from_date, to_date)
+    async def generator():
+        return await report_service.get_cashflow_statement(session, tenant_id, from_date, to_date)
     return await _run_and_cache_report(session, tenant_id, "cashflow", params, generator)
 
 
@@ -135,7 +192,8 @@ async def trial_balance(
     _: User = Depends(deps.get_current_active_user),
 ):
     params = {"as_of_date": as_of_date}
-    generator = lambda: report_service.get_trial_balance(session, tenant_id, as_of_date)
+    async def generator():
+        return await report_service.get_trial_balance(session, tenant_id, as_of_date)
     return await _run_and_cache_report(session, tenant_id, "trial_balance", params, generator)
 
 

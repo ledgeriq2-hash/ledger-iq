@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -15,6 +14,7 @@ from app.models.ai_log import AiLog
 from app.models.attachment import Attachment
 from app.models.billing_plan import BillingPlan
 from app.models.invoice import Invoice
+from app.models.stripe_event import StripeEvent
 from app.models.tenant import Tenant
 from app.models.tenant_subscription import TenantSubscription
 from app.models.user import User
@@ -82,12 +82,17 @@ async def get_plan(session: AsyncSession, code: str | None) -> BillingPlan | Non
     return result.scalar_one_or_none()
 
 
-async def _get_or_create_subscription(session: AsyncSession, tenant_id: UUID) -> TenantSubscription:
+async def _get_or_create_subscription(session: AsyncSession, tenant_id: UUID, settings=None) -> TenantSubscription:
+    settings = settings or get_settings()
     result = await session.execute(select(TenantSubscription).where(TenantSubscription.tenant_id == tenant_id))
     subscription = result.scalar_one_or_none()
     if subscription:
         return subscription
-    subscription = TenantSubscription(tenant_id=tenant_id, status="inactive")
+    subscription = TenantSubscription(
+        tenant_id=tenant_id,
+        status="active",
+        plan_code=getattr(settings, "default_plan_code", None),
+    )
     session.add(subscription)
     await session.commit()
     await session.refresh(subscription)
@@ -111,7 +116,7 @@ async def get_usage_snapshot(session: AsyncSession, tenant_id: UUID) -> dict[str
     invoices = await session.scalar(
         select(func.count()).select_from(Invoice).where(Invoice.tenant_id == tenant_id)
     ) or 0
-    start_month = datetime.now(timezone.utc).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    start_month = datetime.now(UTC).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     ai_calls = await session.scalar(
         select(func.count()).select_from(AiLog).where(AiLog.tenant_id == tenant_id, AiLog.created_at >= start_month)
     ) or 0
@@ -163,6 +168,16 @@ async def enforce_plan_limit(session: AsyncSession, tenant_id: UUID, metric: str
     limit_value = limits.get(metric)
     if not limit_value:
         return
+    plan = status_payload.get("plan")
+    subscription = status_payload.get("subscription")
+    if plan and (plan.price_cents or 0) > 0:
+        status_value = getattr(subscription, "status", None)
+        if status_value not in {"active", "trialing"}:
+            raise AppException(
+                code="subscription_required",
+                message="Active subscription required",
+                http_status=status.HTTP_402_PAYMENT_REQUIRED,
+            )
     usage = status_payload.get("usage", {})
     current_value = float(usage.get(metric) or 0)
     if current_value + increment > float(limit_value):
@@ -178,7 +193,7 @@ def _extract_timestamp(value: Any) -> datetime | None:
     if value is None:
         return None
     try:
-        return datetime.fromtimestamp(int(value), tz=timezone.utc)
+        return datetime.fromtimestamp(int(value), tz=UTC)
     except Exception:
         return None
 
@@ -196,15 +211,10 @@ async def create_checkout_session(
     if not plan:
         raise AppException("plan_not_found", "Plan not found", http_status=status.HTTP_404_NOT_FOUND)
 
-    subscription = await _get_or_create_subscription(session, tenant_id)
+    subscription = await _get_or_create_subscription(session, tenant_id, settings=settings)
     stripe_client = _get_stripe(settings)
     if not stripe_client:
-        subscription.plan_code = plan.code
-        subscription.status = "pending"
-        await session.commit()
-        await _sync_tenant_plan(session, tenant_id, plan.code)
-        fake_url = f"{settings.frontend_url}/billing/confirm?plan={plan.code}"
-        return {"url": fake_url, "id": f"stub_{plan.code}"}
+        raise AppException("stripe_not_configured", "Stripe API key is not configured", http_status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     price_id = (plan.metadata_json or {}).get("stripe_price_id")
     if not price_id:
@@ -239,23 +249,50 @@ async def create_checkout_session(
     return {"url": checkout.url, "id": checkout.id}
 
 
+async def create_customer_portal_session(
+    session: AsyncSession, tenant_id: UUID, return_url: str, settings=None
+) -> dict[str, str]:
+    settings = settings or get_settings()
+    stripe_client = _get_stripe(settings)
+    if not stripe_client:
+        raise AppException("stripe_not_configured", "Stripe API key is not configured", http_status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    subscription = await _get_or_create_subscription(session, tenant_id, settings=settings)
+    customer_id = subscription.stripe_customer_id
+    if not customer_id:
+        raise AppException("missing_customer", "No Stripe customer for tenant", http_status=status.HTTP_404_NOT_FOUND)
+
+    portal_session = stripe_client.billing_portal.Session.create(
+        customer=customer_id,
+        return_url=return_url,
+    )
+    return {"url": portal_session.url}
+
+
 async def handle_webhook_event(session: AsyncSession, payload: bytes, signature: str | None, settings=None) -> dict:
     settings = settings or get_settings()
     stripe_client = _get_stripe(settings)
     event: dict[str, Any] | None = None
-    if stripe_client and settings.stripe_webhook_secret:
-        try:
-            event = stripe_client.Webhook.construct_event(payload, signature, settings.stripe_webhook_secret)
-        except Exception as exc:
-            raise AppException("invalid_webhook_signature", str(exc), http_status=status.HTTP_400_BAD_REQUEST) from exc
-    else:
-        try:
-            event = json.loads(payload)
-        except Exception as exc:  # pragma: no cover - defensive
-            raise AppException("invalid_webhook_payload", "Could not parse webhook") from exc
+    if not stripe_client or not settings.stripe_webhook_secret:
+        raise AppException(
+            "stripe_not_configured",
+            "Stripe webhook secret not configured",
+            http_status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+    try:
+        event = stripe_client.Webhook.construct_event(payload, signature, settings.stripe_webhook_secret)
+    except Exception as exc:
+        raise AppException("invalid_webhook_signature", str(exc), http_status=status.HTTP_400_BAD_REQUEST) from exc
 
     event_type = event.get("type")
     data_object = (event.get("data") or {}).get("object") or {}
+    event_id = event.get("id")
+
+    # Idempotency: skip if already processed
+    if event_id:
+        existing = await session.execute(select(StripeEvent).where(StripeEvent.event_id == event_id))
+        if existing.scalar_one_or_none():
+            return {"received": True, "event_type": event_type, "idempotent": True}
 
     tenant_id = data_object.get("metadata", {}).get("tenant_id") or data_object.get("tenant_id")
     plan_code = data_object.get("metadata", {}).get("plan_code")
@@ -279,7 +316,7 @@ async def handle_webhook_event(session: AsyncSession, payload: bytes, signature:
     if event_type == "checkout.session.completed" and tenant_uuid:
         subscription_id = data_object.get("subscription")
         customer_id = data_object.get("customer")
-        subscription = await _get_or_create_subscription(session, tenant_uuid)
+        subscription = await _get_or_create_subscription(session, tenant_uuid, settings=settings)
         subscription.plan_code = plan_code or subscription.plan_code
         subscription.status = "active"
         subscription.stripe_customer_id = customer_id or subscription.stripe_customer_id
@@ -288,7 +325,7 @@ async def handle_webhook_event(session: AsyncSession, payload: bytes, signature:
         await session.commit()
         await _sync_tenant_plan(session, tenant_uuid, subscription.plan_code)
     elif event_type and event_type.startswith("customer.subscription") and tenant_uuid:
-        subscription = await _get_or_create_subscription(session, tenant_uuid)
+        subscription = await _get_or_create_subscription(session, tenant_uuid, settings=settings)
         subscription.plan_code = plan_code or subscription.plan_code
         subscription.status = data_object.get("status") or subscription.status
         subscription.stripe_subscription_id = data_object.get("id") or subscription.stripe_subscription_id
@@ -296,6 +333,20 @@ async def handle_webhook_event(session: AsyncSession, payload: bytes, signature:
         subscription.cancel_at_period_end = bool(data_object.get("cancel_at_period_end"))
         await session.commit()
         await _sync_tenant_plan(session, tenant_uuid, subscription.plan_code)
+    elif event_type == "invoice.payment_failed" and tenant_uuid:
+        subscription = await _get_or_create_subscription(session, tenant_uuid, settings=settings)
+        subscription.status = "past_due"
+        await session.commit()
+    elif event_type == "customer.subscription.deleted" and tenant_uuid:
+        subscription = await _get_or_create_subscription(session, tenant_uuid, settings=settings)
+        subscription.status = "canceled"
+        subscription.cancel_at_period_end = True
+        await session.commit()
+        await _sync_tenant_plan(session, tenant_uuid, subscription.plan_code)
+
+    if event_id:
+        session.add(StripeEvent(event_id=event_id, event_type=event_type))
+        await session.commit()
 
     return {"received": True, "event_type": event_type}
 
