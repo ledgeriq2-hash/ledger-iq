@@ -1,14 +1,8 @@
-import axiosClient from "./axiosClient";
+import { api } from "./generated/index.js";
 
 const productsApi = {
-  async listProducts(params = {}) {
-    const res = await axiosClient.get("/products/", { params });
-    return res.data;
-  },
-  async createProduct(payload) {
-    const res = await axiosClient.post("/products/", payload);
-    return res.data;
-  },
+  listProducts: (params = {}) => api.products.listProducts(params),
+  createProduct: (payload) => api.products.createProduct(payload),
 };
 
 export default productsApi;

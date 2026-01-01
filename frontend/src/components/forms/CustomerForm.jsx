@@ -24,7 +24,7 @@ const CustomerForm = ({ initialValues = {}, onSubmit, submitLabel = "Save" }) =>
   };
 
   return (
-    <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "0.8rem" }}>
+    <form onSubmit={handleSubmit} className="formStack">
       <Input label="Name" name="name" value={form.name} onChange={handleChange} required dataTestId="customer-name" />
       <Input label="Email" name="email" value={form.email} onChange={handleChange} dataTestId="customer-email" />
       <Input label="Phone" name="phone" value={form.phone} onChange={handleChange} dataTestId="customer-phone" />

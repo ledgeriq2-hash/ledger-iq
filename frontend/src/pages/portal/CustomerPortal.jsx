@@ -1,12 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { NavLink, Outlet, useParams } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
-import portalApi from "../../api/portalApi";
+import { useCustomerPortalData } from "../../hooks/usePortalData.js";
 import LoadingSpinner from "../../components/common/LoadingSpinner.jsx";
-import { getPortalToken, setPortalToken } from "../../api/httpClient";
+import { getPortalToken, setPortalToken } from "../../utils/portalTokens.js";
 import Card from "../../components/ui/Card.jsx";
 import Banner from "../../components/ui/Banner.jsx";
-import ErrorBox from "../../components/ui/ErrorBox.jsx";
+import ErrorState from "../../components/ui/ErrorState.jsx";
 import colors from "../../design/colors.js";
 import spacing from "../../design/spacing.js";
 
@@ -15,7 +14,7 @@ const navStyle = (isActive) => ({
   borderRadius: "10px",
   textDecoration: "none",
   color: isActive ? colors.primary : colors.text,
-  background: isActive ? "rgba(14,165,233,0.08)" : "transparent",
+  background: isActive ? "color-mix(in srgb, var(--color-primary) 12%, transparent)" : "transparent",
   fontWeight: 600,
   border: isActive ? `1px solid ${colors.primary}` : `1px solid transparent`,
 });
@@ -33,25 +32,7 @@ const CustomerPortal = () => {
 
   const activeToken = useMemo(() => portalToken || getPortalToken(), [portalToken]);
 
-  const { data: portalData, isLoading, error } = useQuery({
-    queryKey: ["portal", "customer", activeToken],
-    queryFn: async () => {
-      const [overview, invoices, payments, settings] = await Promise.all([
-        portalApi.customerOverview(activeToken),
-        portalApi.customerInvoices(activeToken),
-        portalApi.customerPayments(activeToken),
-        portalApi.customerSettings(activeToken),
-      ]);
-      return {
-        ...overview,
-        invoices: invoices?.invoices || overview?.invoices || [],
-        payments: payments?.payments || overview?.payments || [],
-        settings: settings || overview?.settings || {},
-      };
-    },
-    enabled: Boolean(activeToken),
-    retry: 2,
-  });
+  const { data: portalData, isLoading, error, refetch: refreshPortal } = useCustomerPortalData(activeToken);
 
   const renderBody = () => {
     if (!activeToken) {
@@ -61,7 +42,11 @@ const CustomerPortal = () => {
       return <LoadingSpinner message="Loading customer portal..." />;
     }
     if (error) {
-      return <ErrorBox message={error.message || "Failed to load portal."} />;
+      return (
+        <div className="u-pad-4">
+          <ErrorState title="Failed to load portal" error={error} onRetry={() => refreshPortal?.()} />
+        </div>
+      );
     }
     return <Outlet context={{ token: activeToken, portalData }} />;
   };
@@ -72,9 +57,10 @@ const CustomerPortal = () => {
     <div
       style={{
         minHeight: "100vh",
-        background: "linear-gradient(135deg, rgba(14,165,233,0.08), rgba(15,23,42,0.94))",
+        background:
+          "linear-gradient(135deg, color-mix(in srgb, var(--color-secondary) 18%, transparent), var(--color-bg))",
         padding: "1rem",
-        color: "#0f172a",
+        color: "var(--color-text)",
       }}
       data-testid="customer-portal"
     >

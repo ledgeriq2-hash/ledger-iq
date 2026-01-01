@@ -1,23 +1,22 @@
 import React from "react";
 import { Navigate } from "react-router-dom";
 import useAuth from "../../hooks/useAuth.js";
+import usePermissions from "../../hooks/usePermissions.js";
 
 /**
  * Wrap routes that require authentication and (optionally) certain roles.
  */
 const ProtectedRoute = ({ children, requiredRoles }) => {
-  const { user, isAuthenticated } = useAuth();
-
-  const hasRole =
-    Array.isArray(requiredRoles) && requiredRoles.length > 0
-      ? requiredRoles.some((role) => user?.roles?.includes?.(role))
-      : true;
+  const { isAuthenticated } = useAuth();
+  const { hasRole } = usePermissions();
+  const requiresRole = Array.isArray(requiredRoles) && requiredRoles.length > 0;
+  const allowed = requiresRole ? requiredRoles.some((role) => hasRole(role)) : true;
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
   }
 
-  if (!hasRole) {
+  if (!allowed) {
     return <Navigate to="/forbidden" replace />;
   }
 

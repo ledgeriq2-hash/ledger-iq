@@ -1,3 +1,3 @@
-import api from "../api/axiosClient";
+import api from "../api/index";
 
 export default api;

@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useEffect, useMemo, useState } from "react";
-import { setErrorNotifier } from "../api/axiosClient.js";
+import { setErrorNotifier } from "../api/index";
 
 export const NotificationContext = createContext({
   notifications: [],

@@ -1,26 +1,22 @@
-import axiosClient from "./axiosClient";
+import { api } from "./generated/index.js";
 
 const authApi = {
-  async login(data) {
-    const response = await axiosClient.post("/auth/login", data);
-    return response.data;
-  },
-  async refresh(payload = {}) {
-    const response = await axiosClient.post("/auth/refresh", payload);
-    return response.data;
-  },
-  async me() {
-    const response = await axiosClient.get("/auth/me");
-    return response.data;
-  },
+  login: (data) => api.auth.login(data),
+  register: (payload) => api.auth.register(payload),
+  refresh: (payload = {}) => api.auth.refresh(payload),
+  /**
+   * @returns {Promise<import("./types").AuthMeResponse>}
+   */
+  me: () => api.auth.me(),
   async logout(payload = {}) {
     try {
-      await axiosClient.post("/auth/logout", payload);
+      await api.auth.logout(payload);
     } catch (err) {
       // logout best-effort
       console.warn("Logout failed", err);
     }
   },
+  logoutAll: () => api.auth.logoutAll(),
 };
 
 export default authApi;

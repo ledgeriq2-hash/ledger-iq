@@ -1,18 +1,9 @@
-import axiosClient from "./axiosClient";
+import { api } from "./generated/index.js";
 
 const onboardingApi = {
-  async getStatus() {
-    const response = await axiosClient.get("/onboarding/status");
-    return response.data;
-  },
-  async updateStatus(payload) {
-    const response = await axiosClient.post("/onboarding/status", payload);
-    return response.data;
-  },
-  async createSampleData() {
-    const response = await axiosClient.post("/onboarding/sample-data");
-    return response.data;
-  },
+  getStatus: () => api.onboarding.getStatus(),
+  updateStatus: (payload) => api.onboarding.updateStatus(payload),
+  createSampleData: () => api.onboarding.createSampleData(),
 };
 
 export default onboardingApi;

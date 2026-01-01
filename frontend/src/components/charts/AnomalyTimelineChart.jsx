@@ -1,28 +1,40 @@
 import React from "react";
 import Card from "../ui/Card.jsx";
+import EmptyState from "../ui/EmptyState.jsx";
 import Tag from "../ui/Tag.jsx";
 
 const AnomalyTimelineChart = ({ data }) => {
-  const anomalies = data?.anomalies || [];
+  const anomalies = Array.isArray(data?.anomalies)
+    ? data.anomalies
+    : Array.isArray(data?.items)
+      ? data.items
+      : Array.isArray(data)
+        ? data
+        : [];
+
+  const toneForSeverity = (value) => {
+    const severity = String(value || "").toLowerCase();
+    if (severity.includes("high") || severity.includes("critical")) return "danger";
+    if (severity.includes("medium")) return "warning";
+    return "default";
+  };
+
   return (
-    <Card title="Anomaly Timeline" actions={<Tag tone="warning">Monitoring</Tag>} style={{ minHeight: "200px" }}>
-      <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
-        {anomalies.length === 0 && <span style={{ color: "#94a3b8" }}>No anomalies detected</span>}
-        {anomalies.map((a, idx) => (
-          <div
-            key={idx}
-            style={{
-              padding: "0.45rem 0.6rem",
-              borderRadius: "10px",
-              background: "rgba(239,68,68,0.1)",
-              color: "#991b1b",
-              border: "1px solid rgba(239,68,68,0.25)",
-              fontSize: "0.9rem",
-            }}
-          >
-            #{a.index} • {a.value}
-          </div>
-        ))}
+    <Card title="Anomaly Timeline" actions={<Tag tone="warning">Monitoring</Tag>} className="chartCard chartCardSm">
+      <div className="anomalyWrap">
+        {anomalies.length === 0 ? (
+          <EmptyState compact title="No anomalies detected" message="AI insights will appear after the next run." />
+        ) : (
+          anomalies.map((a, idx) => (
+            <div key={a.id || idx} className="anomalyPill">
+              <div className="u-flex u-gap-2 u-items-center">
+                <Tag tone={toneForSeverity(a.severity)}>{a.severity || "info"}</Tag>
+                <span>{a.title || a.message || "Anomaly insight"}</span>
+              </div>
+              <div className="u-text-muted">{a.created_at || a.timestamp || "?"}</div>
+            </div>
+          ))
+        )}
       </div>
     </Card>
   );

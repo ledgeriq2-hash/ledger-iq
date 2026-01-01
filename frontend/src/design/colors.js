@@ -1,14 +1,17 @@
 export const colors = {
-  primary: "#0ea5e9",
-  primaryDark: "#0f172a",
-  surface: "#ffffff",
-  surfaceMuted: "#f8fafc",
-  border: "#e2e8f0",
-  text: "#0f172a",
-  textMuted: "#475569",
-  danger: "#b91c1c",
-  success: "#16a34a",
-  warning: "#d97706",
+  primary: "var(--color-primary)",
+  secondary: "var(--color-secondary)",
+  primaryDark: "var(--color-bg)",
+  surface: "var(--color-surface)",
+  surfaceMuted: "var(--kit-surface-muted)",
+  border: "var(--color-border)",
+  text: "var(--color-text)",
+  textMuted: "var(--color-muted)",
+  onPrimary: "var(--color-on-primary)",
+  onSecondary: "var(--color-on-secondary)",
+  danger: "var(--color-danger)",
+  success: "var(--color-primary)",
+  warning: "var(--color-danger)",
 };
 
 export default colors;

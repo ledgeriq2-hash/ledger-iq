@@ -1,22 +1,19 @@
-import axiosClient from "./axiosClient";
+import { api } from "./generated/index.js";
 
 const billingApi = {
-  async listPlans() {
-    const response = await axiosClient.get("/billing/plans");
-    return response.data;
-  },
-  async getSubscription() {
-    const response = await axiosClient.get("/billing/subscription");
-    return response.data;
-  },
-  async startCheckout(planCode, successUrl, cancelUrl) {
-    const response = await axiosClient.post("/billing/checkout", {
-      plan_code: planCode,
-      success_url: successUrl,
-      cancel_url: cancelUrl,
-    });
-    return response.data;
-  },
+  /**
+   * @returns {Promise<import("./types").BillingPlansResponse>}
+   */
+  listPlans: () => api.billing.listPlans(),
+  /**
+   * @returns {Promise<import("./types").BillingSubscriptionResponse>}
+   */
+  getSubscription: () => api.billing.getSubscription(),
+  startCheckout: (planCode, successUrl, cancelUrl) => api.billing.startCheckout(planCode, successUrl, cancelUrl),
+  /**
+   * @returns {Promise<import("./types").BillingOverviewResponse>}
+   */
+  getOverview: () => api.billing.getOverview(),
 };
 
 export default billingApi;

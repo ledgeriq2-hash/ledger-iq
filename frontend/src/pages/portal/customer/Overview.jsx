@@ -16,11 +16,13 @@ const CustomerOverview = () => {
   const invoices = portalData?.invoices || [];
   const payments = portalData?.payments || [];
   const stats = {
-    invoices_open: invoices.length,
+    invoices_open: portalData?.stats?.open_invoices ?? invoices.length,
     payments_made: payments.length,
-    anomalies: portalData?.stats?.anomalies ?? 0,
+    total_outstanding: portalData?.stats?.total_open_amount ?? 0,
   };
   const recent = portalData?.recent_activity || [];
+
+  const balance = portalData?.balance;
 
   return (
     <div style={{ display: "grid", gap: spacing.lg }}>
@@ -34,11 +36,16 @@ const CustomerOverview = () => {
           <div style={{ fontSize: "1.8rem", fontWeight: 700 }}>{stats.payments_made ?? 0}</div>
         </Card>
         <Card>
-          <div style={{ color: colors.textMuted, fontWeight: 600 }}>
-            {t("ai.anomalies", { defaultValue: "Anomalies" })}
-          </div>
-          <div style={{ fontSize: "1.8rem", fontWeight: 700 }}>{stats.anomalies ?? 0}</div>
+          <div style={{ color: colors.textMuted, fontWeight: 600 }}>{t("portal.stats.totalOpenAmount", { defaultValue: "Total outstanding" })}</div>
+          <div style={{ fontSize: "1.8rem", fontWeight: 700 }}>{stats.total_outstanding ?? 0}</div>
         </Card>
+        {balance ? (
+          <Card>
+            <div style={{ color: colors.textMuted, fontWeight: 600 }}>{t("portal.balance", { defaultValue: "Current balance" })}</div>
+            <div style={{ fontSize: "1.8rem", fontWeight: 700 }}>{balance.balance}</div>
+            <div style={{ color: colors.textMuted, fontSize: "0.9rem" }}>{balance.as_of_date}</div>
+          </Card>
+        ) : null}
       </div>
 
       <Card title={t("status.success", { defaultValue: "Recent activity" })}>
@@ -55,7 +62,7 @@ const CustomerOverview = () => {
                 <div style={{ fontWeight: 600 }}>{item.title}</div>
                 <div style={{ color: colors.textMuted }}>{item.description}</div>
               </div>
-              <div style={{ color: "#94a3b8", fontSize: "0.9rem" }}>{item.timestamp}</div>
+              <div style={{ color: "var(--color-muted)", fontSize: "0.9rem" }}>{item.timestamp}</div>
             </div>
           ))}
         </div>

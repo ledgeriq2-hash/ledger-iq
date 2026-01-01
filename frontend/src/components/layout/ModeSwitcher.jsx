@@ -8,6 +8,8 @@ const applyModeClass = (mode) => {
   if (typeof document === "undefined") return;
   document.body.classList.remove(`theme-${LIGHT}`, `theme-${DARK}`);
   document.body.classList.add(`theme-${mode}`);
+  document.body.classList.toggle("theme-dark", mode === DARK);
+  document.body.classList.toggle("theme-light", mode === LIGHT);
 };
 
 const getInitialMode = () => {
@@ -36,13 +38,7 @@ const ModeSwitcher = () => {
     <button
       type="button"
       onClick={toggle}
-      style={{
-        padding: "0.35rem 0.75rem",
-        borderRadius: "0.5rem",
-        border: "1px solid #e2e8f0",
-        background: "#fff",
-        cursor: "pointer",
-      }}
+      className="controlButton"
       aria-label="Toggle light/dark mode"
     >
       {mode === LIGHT ? "Light" : "Dark"}

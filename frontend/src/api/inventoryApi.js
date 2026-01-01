@@ -1,18 +1,9 @@
-import axiosClient from "./axiosClient";
+import { api } from "./generated/index.js";
 
 const inventoryApi = {
-  async listMovements(params = {}) {
-    const res = await axiosClient.get("/inventory/movements", { params });
-    return res.data;
-  },
-  async createMovement(payload) {
-    const res = await axiosClient.post("/inventory/movements", payload);
-    return res.data;
-  },
-  async summary() {
-    const res = await axiosClient.get("/inventory/summary");
-    return res.data;
-  },
+  listMovements: (params = {}) => api.inventory.listMovements(params),
+  createMovement: (payload) => api.inventory.createMovement(payload),
+  summary: () => api.inventory.summary(),
 };
 
 export default inventoryApi;

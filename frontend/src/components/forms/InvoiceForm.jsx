@@ -27,7 +27,7 @@ const InvoiceForm = ({ initialValues = {}, onSubmit, customers = [], submitLabel
   };
 
   return (
-    <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "0.8rem" }}>
+    <form onSubmit={handleSubmit} className="formStack">
       <Select
         label="Customer"
         name="customer_id"

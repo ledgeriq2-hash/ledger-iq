@@ -164,7 +164,7 @@ const RecurringInvoices = () => {
                   padding: spacing.md,
                   display: "grid",
                   gap: spacing.sm,
-                  background: "#fff",
+                  background: "var(--color-surface)",
                 }}
               >
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>

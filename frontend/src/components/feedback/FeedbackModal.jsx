@@ -1,5 +1,9 @@
 import React, { useState } from "react";
+
 import feedbackApi from "../../api/feedbackApi.js";
+import Modal from "../ui/Modal.jsx";
+import Button from "../ui/Button.jsx";
+import Select from "../ui/Select.jsx";
 
 const categories = [
   { value: "bug", label: "Bug" },
@@ -15,8 +19,6 @@ const FeedbackModal = ({ open, onClose }) => {
   const [error, setError] = useState(null);
   const [sent, setSent] = useState(false);
 
-  if (!open) return null;
-
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSubmitting(true);
@@ -27,7 +29,7 @@ const FeedbackModal = ({ open, onClose }) => {
       setMessage("");
       setCategory("bug");
       setTimeout(() => setSent(false), 2000);
-    } catch (err) {
+    } catch {
       setError("Could not send feedback");
     } finally {
       setSubmitting(false);
@@ -35,81 +37,42 @@ const FeedbackModal = ({ open, onClose }) => {
   };
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(15,23,42,0.3)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 1000,
-      }}
-    >
-      <div
-        style={{
-          background: "#fff",
-          padding: "1.25rem",
-          borderRadius: "10px",
-          width: "400px",
-          boxShadow: "0 10px 30px rgba(15,23,42,0.15)",
-        }}
-      >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <h3 style={{ margin: 0 }}>Send Feedback</h3>
-          <button onClick={onClose} style={{ background: "transparent", border: "none", fontSize: "1.1rem" }}>
-            ✕
-          </button>
-        </div>
-        <p style={{ margin: "0.25rem 0 0.75rem", color: "#475569" }}>
-          Share issues or ideas to help us improve during the soft launch.
-        </p>
-        {error && <div style={{ color: "#b91c1c", marginBottom: "0.5rem" }}>{error}</div>}
-        {sent && <div style={{ color: "#0f766e", marginBottom: "0.5rem" }}>Thanks for the feedback!</div>}
-        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-          <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem", fontSize: "0.9rem" }}>
-            Category
-            <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              style={{ padding: "0.45rem", borderRadius: "6px", border: "1px solid #cbd5e1" }}
-            >
-              {categories.map((c) => (
-                <option key={c.value} value={c.value}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label style={{ display: "flex", flexDirection: "column", gap: "0.25rem", fontSize: "0.9rem" }}>
-            Message
-            <textarea
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              rows={4}
-              required
-              style={{ padding: "0.6rem", borderRadius: "6px", border: "1px solid #cbd5e1", resize: "vertical" }}
-            />
-          </label>
-          <button
-            type="submit"
-            disabled={submitting}
-            style={{
-              padding: "0.55rem 0.75rem",
-              background: "#2563eb",
-              color: "#fff",
-              border: "none",
-              borderRadius: "6px",
-              cursor: "pointer",
-              opacity: submitting ? 0.7 : 1,
-            }}
-          >
+    <Modal open={open} title="Send Feedback" onClose={onClose}>
+      <p className="u-text-muted u-m-0">
+        Share issues or ideas to help us improve during the soft launch.
+      </p>
+
+      {error && <div className="formError">{error}</div>}
+      {sent && <div className="formHelper">Thanks for the feedback!</div>}
+
+      <form onSubmit={handleSubmit} className="formStack">
+        <Select
+          label="Category"
+          value={category}
+          onChange={(e) => setCategory(e.target.value)}
+          options={categories}
+        />
+
+        <label className="formField">
+          <span className="formLabel">Message</span>
+          <textarea
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            rows={4}
+            required
+            className="kit-textarea"
+          />
+        </label>
+
+        <div className="modalActions">
+          <Button type="submit" disabled={submitting}>
             {submitting ? "Sending..." : "Submit"}
-          </button>
-        </form>
-      </div>
-    </div>
+          </Button>
+        </div>
+      </form>
+    </Modal>
   );
 };
 
 export default FeedbackModal;
+

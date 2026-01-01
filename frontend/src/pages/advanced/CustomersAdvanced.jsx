@@ -1,4 +1,5 @@
 import React from "react";
+
 import MainLayout from "../../layouts/MainLayout.jsx";
 import GenericTable from "../../components/tables/GenericTable.jsx";
 import CustomerForm from "../../components/forms/CustomerForm.jsx";
@@ -9,9 +10,10 @@ const CustomersAdvanced = () => {
     { name: "Acme", tier: "Enterprise", ar: "$12,000" },
     { name: "Globex", tier: "Growth", ar: "$6,500" },
   ];
+
   return (
     <MainLayout>
-      <div style={{ display: "grid", gap: "1rem", gridTemplateColumns: "2fr 1fr" }}>
+      <div className="splitGrid">
         <GenericTable
           title="Customers"
           columns={[
@@ -30,3 +32,4 @@ const CustomersAdvanced = () => {
 };
 
 export default CustomersAdvanced;
+

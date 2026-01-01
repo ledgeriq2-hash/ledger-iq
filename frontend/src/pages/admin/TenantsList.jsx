@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import MainLayout from "../../layouts/MainLayout.jsx";
 import adminApi from "../../api/adminApi.js";
 import usePermissions from "../../hooks/usePermissions.js";
 
@@ -42,28 +41,24 @@ const TenantsList = () => {
   };
 
   if (!hasRole("owner") && !hasRole("admin")) {
-    return (
-      <MainLayout>
-        <div>You need admin or owner permissions to view this page.</div>
-      </MainLayout>
-    );
+    return <div className="u-pad-4">You need admin or owner permissions to view this page.</div>;
   }
 
   return (
-    <MainLayout>
+    <div className="u-pad-4">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
         <h2 style={{ margin: 0 }}>Tenants</h2>
-        {loading && <span style={{ color: "#475569" }}>Loading...</span>}
+        {loading && <span style={{ color: "var(--color-muted)" }}>Loading...</span>}
       </div>
-      {error && <div style={{ color: "#b91c1c", marginBottom: "0.75rem" }}>{error}</div>}
-      <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: "10px", overflow: "hidden" }}>
+      {error && <div style={{ color: "var(--color-primary)", marginBottom: "0.75rem" }}>{error}</div>}
+      <div style={{ background: "var(--color-surface)", border: "1px solid var(--color-border)", borderRadius: "10px", overflow: "hidden" }}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead style={{ background: "#f8fafc" }}>
+          <thead style={{ background: "var(--kit-surface-muted)" }}>
             <tr>
               {["Name", "Slug", "Created", "Owner", "Plan", "Status", "Soft Launch", "Actions"].map((h) => (
                 <th
                   key={h}
-                  style={{ textAlign: "left", padding: "0.75rem", borderBottom: "1px solid #e2e8f0", fontWeight: 600 }}
+                  style={{ textAlign: "left", padding: "0.75rem", borderBottom: "1px solid var(--color-border)", fontWeight: 600 }}
                 >
                   {h}
                 </th>
@@ -72,7 +67,7 @@ const TenantsList = () => {
           </thead>
           <tbody>
             {tenants.map((t) => (
-              <tr key={t.id} style={{ borderBottom: "1px solid #e2e8f0" }}>
+              <tr key={t.id} style={{ borderBottom: "1px solid var(--color-border)" }}>
                 <td style={{ padding: "0.75rem" }}>{t.name}</td>
                 <td style={{ padding: "0.75rem" }}>{t.slug}</td>
                 <td style={{ padding: "0.75rem" }}>{new Date(t.created_at).toLocaleDateString()}</td>
@@ -83,7 +78,13 @@ const TenantsList = () => {
                 <td style={{ padding: "0.75rem", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
                   <button
                     onClick={() => navigate(`/admin/tenants/${t.id}`)}
-                    style={{ padding: "0.35rem 0.6rem", borderRadius: "6px", border: "1px solid #cbd5e1" }}
+                    style={{
+                      padding: "0.35rem 0.6rem",
+                      borderRadius: "6px",
+                      border: "1px solid var(--color-border)",
+                      background: "var(--color-surface)",
+                      color: "var(--color-text)",
+                    }}
                   >
                     Overview
                   </button>
@@ -92,8 +93,9 @@ const TenantsList = () => {
                     style={{
                       padding: "0.35rem 0.6rem",
                       borderRadius: "6px",
-                      border: "1px solid #22c55e",
-                      color: "#166534",
+                      border: "1px solid var(--color-secondary)",
+                      color: "var(--color-text)",
+                      background: "color-mix(in srgb, var(--color-secondary) 16%, transparent)",
                     }}
                   >
                     Enable
@@ -103,8 +105,9 @@ const TenantsList = () => {
                     style={{
                       padding: "0.35rem 0.6rem",
                       borderRadius: "6px",
-                      border: "1px solid #ef4444",
-                      color: "#b91c1c",
+                      border: "1px solid var(--color-primary)",
+                      color: "var(--color-text)",
+                      background: "color-mix(in srgb, var(--color-primary) 12%, transparent)",
                     }}
                   >
                     Disable
@@ -122,7 +125,7 @@ const TenantsList = () => {
           </tbody>
         </table>
       </div>
-    </MainLayout>
+    </div>
   );
 };
 

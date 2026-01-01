@@ -55,7 +55,7 @@ const SupplierOverview = () => {
                 <div style={{ fontWeight: 600 }}>{item.title}</div>
                 <div style={{ color: colors.textMuted }}>{item.description}</div>
               </div>
-              <div style={{ color: "#94a3b8", fontSize: "0.9rem" }}>{item.timestamp}</div>
+              <div style={{ color: "var(--color-muted)", fontSize: "0.9rem" }}>{item.timestamp}</div>
             </div>
           ))}
         </div>

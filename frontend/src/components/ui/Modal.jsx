@@ -5,17 +5,7 @@ import Button from "./Button.jsx";
 const Modal = ({ open, title, onClose, children, actions }) => {
   if (!open) return null;
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(15,23,42,0.4)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        zIndex: 1000,
-      }}
-    >
+    <div className="modalOverlay" role="dialog" aria-modal="true">
       <Card
         title={title}
         actions={
@@ -23,10 +13,10 @@ const Modal = ({ open, title, onClose, children, actions }) => {
             Close
           </Button>
         }
-        style={{ maxWidth: "520px", width: "100%" }}
+        className="modalCard"
       >
         {children}
-        {actions && <div style={{ marginTop: "1rem", display: "flex", justifyContent: "flex-end", gap: "0.5rem" }}>{actions}</div>}
+        {actions && <div className="modalActions">{actions}</div>}
       </Card>
     </div>
   );

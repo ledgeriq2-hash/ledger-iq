@@ -1,4 +1,5 @@
 import React from "react";
+
 import MainLayout from "../../layouts/MainLayout.jsx";
 import GenericTable from "../../components/tables/GenericTable.jsx";
 import InvoiceForm from "../../components/forms/InvoiceForm.jsx";
@@ -9,9 +10,10 @@ const InvoicesAdvanced = () => {
     { number: "INV-301", customer: "Acme", status: "Sent", total: "$5,200" },
     { number: "INV-302", customer: "Globex", status: "Paid", total: "$1,900" },
   ];
+
   return (
     <MainLayout>
-      <div style={{ display: "grid", gap: "1rem", gridTemplateColumns: "2fr 1fr" }}>
+      <div className="splitGrid">
         <GenericTable
           title="Invoices"
           columns={[
@@ -31,3 +33,4 @@ const InvoicesAdvanced = () => {
 };
 
 export default InvoicesAdvanced;
+

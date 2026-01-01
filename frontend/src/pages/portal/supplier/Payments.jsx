@@ -15,7 +15,7 @@ const SupplierPayments = () => {
       <h2 style={{ marginTop: 0 }}>{t("nav.payments", { defaultValue: "Payments" })}</h2>
       <div className="card" style={{ display: "grid", gap: "0.75rem" }}>
         {items.length === 0 && (
-          <p style={{ margin: 0, color: "#64748b" }}>
+          <p style={{ margin: 0, color: "var(--color-muted)" }}>
             {t("status.noData", { defaultValue: "No data available" })}
           </p>
         )}
@@ -24,7 +24,7 @@ const SupplierPayments = () => {
             key={pay.id}
             style={{
               padding: "0.75rem",
-              border: "1px solid #e2e8f0",
+              border: "1px solid var(--color-border)",
               borderRadius: "10px",
               display: "grid",
               gap: "0.35rem",
@@ -32,13 +32,13 @@ const SupplierPayments = () => {
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div style={{ fontWeight: 700 }}>{pay.reference || pay.id}</div>
-              <span style={{ color: "#16a34a", fontWeight: 700 }}>{pay.status || "COMPLETED"}</span>
+              <span style={{ color: "var(--color-primary)", fontWeight: 700 }}>{pay.status || "COMPLETED"}</span>
             </div>
-            <div style={{ color: "#475569" }}>
+            <div style={{ color: "var(--color-muted)" }}>
               {t("status.success", { defaultValue: "Amount" })}: {pay.amount} · {t("status.success", { defaultValue: "Date" })}:{" "}
               {pay.paid_at || pay.created_at}
             </div>
-            <div style={{ color: "#64748b", fontSize: "0.95rem" }}>
+            <div style={{ color: "var(--color-muted)", fontSize: "0.95rem" }}>
               {t("nav.suppliers", { defaultValue: "Suppliers" })}: {pay.supplier_name || "-"}
             </div>
           </div>

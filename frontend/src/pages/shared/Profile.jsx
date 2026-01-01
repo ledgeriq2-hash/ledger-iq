@@ -1,7 +1,13 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import httpClient from "../../api/httpClient";
+
+import { api } from "../../api/generated/index.js";
 import LoadingSpinner from "../../components/common/LoadingSpinner.jsx";
+import Card from "../../components/ui/Card.jsx";
+import Input from "../../components/ui/Input.jsx";
+import Select from "../../components/ui/Select.jsx";
+import ErrorState from "../../components/ui/ErrorState.jsx";
+import Button from "../../components/ui/Button.jsx";
 
 const Profile = () => {
   const { t } = useTranslation();
@@ -9,34 +15,39 @@ const Profile = () => {
     name: "",
     email: "",
     preferred_language: "en",
-    preferred_theme: "gold",
+    preferred_theme: "dark",
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
 
-  useEffect(() => {
-    const load = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const res = await httpClient.get("/me/profile");
-        const data = res.data || {};
-        setForm({
-          name: data.name || data.full_name || "",
-          email: data.email || "",
-          preferred_language: data.preferred_language || "en",
-          preferred_theme: data.preferred_theme || "gold",
-        });
-      } catch (err) {
-        setError(err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    load();
+  const loadProfile = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const storedLanguage =
+        typeof window !== "undefined" ? localStorage.getItem("preferred_language") || "en" : "en";
+      const storedTheme =
+        typeof window !== "undefined" ? localStorage.getItem("preferred_theme") || "dark" : "dark";
+      const res = await api.auth.me();
+      const data = res?.user || res || {};
+      setForm({
+        name: data.name || data.full_name || "",
+        email: data.email || "",
+        preferred_language: data.preferred_language || storedLanguage,
+        preferred_theme: data.preferred_theme || storedTheme,
+      });
+    } catch (err) {
+      setError(err);
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    loadProfile();
+  }, [loadProfile]);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -49,7 +60,10 @@ const Profile = () => {
     setError(null);
     setSuccess(false);
     try {
-      await httpClient.patch("/me/profile", form);
+      if (typeof window !== "undefined") {
+        localStorage.setItem("preferred_language", form.preferred_language);
+        localStorage.setItem("preferred_theme", form.preferred_theme);
+      }
       setSuccess(true);
     } catch (err) {
       setError(err);
@@ -64,85 +78,63 @@ const Profile = () => {
 
   if (error) {
     return (
-      <div style={{ padding: "1rem" }}>
-        <p style={{ color: "#b91c1c" }}>{t("status.error", { defaultValue: "Failed to load profile." })}</p>
-        <pre style={{ background: "#fef2f2", padding: "0.75rem", borderRadius: "8px", overflow: "auto" }}>
-          {error?.message}
-        </pre>
+      <div className="u-pad-4">
+        <ErrorState
+          title={t("status.error", { defaultValue: "Failed to load profile." })}
+          error={error}
+          onRetry={loadProfile}
+        />
       </div>
     );
   }
 
   return (
-    <div style={{ padding: "1rem", maxWidth: "640px" }}>
-      <h1 style={{ marginTop: 0 }}>{t("nav.profile", { defaultValue: "Profile" })}</h1>
-      <form onSubmit={handleSubmit} className="card" style={{ display: "grid", gap: "1rem" }}>
-        <div style={{ display: "grid", gap: "0.35rem" }}>
-          <label htmlFor="name">{t("profile.name", { defaultValue: "Name" })}</label>
-          <input
-            id="name"
+    <div className="u-pad-4 u-maxw-sm u-grid u-gap-4">
+      <h1 className="u-m-0">{t("nav.profile", { defaultValue: "Profile" })}</h1>
+      <Card title={t("nav.profile", { defaultValue: "Profile" })} className="profileCard">
+        <form onSubmit={handleSubmit} className="formStack">
+          <Input
+            label={t("profile.name", { defaultValue: "Name" })}
             name="name"
             value={form.name}
             onChange={handleChange}
-            style={{ padding: "0.6rem", borderRadius: "8px", border: "1px solid #e2e8f0" }}
           />
-        </div>
-        <div style={{ display: "grid", gap: "0.35rem" }}>
-          <label htmlFor="email">{t("profile.email", { defaultValue: "Email" })}</label>
-          <input
-            id="email"
+          <Input
+            label={t("profile.email", { defaultValue: "Email" })}
             type="email"
             name="email"
             value={form.email}
             onChange={handleChange}
-            style={{ padding: "0.6rem", borderRadius: "8px", border: "1px solid #e2e8f0" }}
           />
-        </div>
-        <div style={{ display: "grid", gap: "0.35rem" }}>
-          <label htmlFor="preferred_language">
-            {t("profile.language", { defaultValue: "Preferred language" })}
-          </label>
-          <select
-            id="preferred_language"
+          <Select
+            label={t("profile.language", { defaultValue: "Preferred language" })}
             name="preferred_language"
             value={form.preferred_language}
             onChange={handleChange}
-            style={{ padding: "0.6rem", borderRadius: "8px", border: "1px solid #e2e8f0" }}
-          >
-            <option value="en">English</option>
-            <option value="ar">Arabic</option>
-          </select>
-        </div>
-        <div style={{ display: "grid", gap: "0.35rem" }}>
-          <label htmlFor="preferred_theme">
-            {t("profile.theme", { defaultValue: "Preferred theme" })}
-          </label>
-          <select
-            id="preferred_theme"
+            options={[
+              { label: "English", value: "en" },
+              { label: "Arabic", value: "ar" },
+            ]}
+          />
+          <Select
+            label={t("profile.theme", { defaultValue: "Appearance" })}
             name="preferred_theme"
             value={form.preferred_theme}
             onChange={handleChange}
-            style={{ padding: "0.6rem", borderRadius: "8px", border: "1px solid #e2e8f0" }}
-          >
-            <option value="gold">Gold</option>
-            <option value="silver">Silver</option>
-          </select>
-        </div>
+            options={[
+              { label: "Light", value: "light" },
+              { label: "Dark", value: "dark" },
+            ]}
+          />
 
-        <div style={{ display: "flex", gap: "0.75rem", alignItems: "center" }}>
-          <button
-            className="btn btn-primary"
-            type="submit"
-            disabled={saving}
-            style={{ minWidth: "120px" }}
-          >
-            {saving
-              ? t("status.loading", { defaultValue: "Saving..." })
-              : t("actions.save", { defaultValue: "Save" })}
-          </button>
-          {success && <span style={{ color: "#16a34a" }}>{t("status.success", { defaultValue: "Saved" })}</span>}
-        </div>
-      </form>
+          <div className="u-flex u-gap-3 u-items-center u-wrap">
+            <Button type="submit" disabled={saving} className="profileSave">
+              {saving ? t("status.loading", { defaultValue: "Saving..." }) : t("actions.save", { defaultValue: "Save" })}
+            </Button>
+            {success && <span className="formHelper">{t("status.success", { defaultValue: "Saved" })}</span>}
+          </div>
+        </form>
+      </Card>
     </div>
   );
 };

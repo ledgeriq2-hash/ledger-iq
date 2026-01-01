@@ -1,14 +1,8 @@
-import axiosClient from "./axiosClient";
+import { api } from "./generated/index.js";
 
 const feedbackApi = {
-  async submit(payload) {
-    const response = await axiosClient.post("/feedback/", payload);
-    return response.data;
-  },
-  async listMine() {
-    const response = await axiosClient.get("/feedback/");
-    return response.data;
-  },
+  submit: (payload) => api.feedback.submit(payload),
+  listMine: (params = {}) => api.feedback.listMine(params),
 };
 
 export default feedbackApi;

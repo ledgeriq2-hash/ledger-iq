@@ -1,42 +1,36 @@
-import { useState } from "react";
-import aiApi from "../api/aiApi";
+import { useQuery } from "@tanstack/react-query";
 
-const useAIInsights = () => {
-  const [loading, setLoading] = useState(false);
-  const [data, setData] = useState(null);
-  const [error, setError] = useState(null);
+import aiApi from "../api/aiApi.js";
+import aiInsightsApi from "../api/aiInsightsApi.js";
 
-  const forecast = async (payload) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const { data } = await aiApi.forecast(payload);
-      setData(data);
-      return data;
-    } catch (err) {
-      setError(err);
-      throw err;
-    } finally {
-      setLoading(false);
-    }
+export const useAiSummary = ({ enabled = true } = {}) =>
+  useQuery({
+    queryKey: ["ai", "summary"],
+    queryFn: () => aiInsightsApi.getSummary(),
+    enabled,
+    staleTime: 30_000,
+  });
+
+export const useAiOverview = ({ enabled = true } = {}) =>
+  useQuery({
+    queryKey: ["ai", "overview"],
+    queryFn: () => aiApi.overview(),
+    enabled,
+    staleTime: 15_000,
+  });
+
+export const useAiInsights = (filters = {}) => {
+  const params = {
+    from_date: filters.from_date || undefined,
+    to_date: filters.to_date || undefined,
+    severity: filters.severity || undefined,
+    type: filters.type || undefined,
+    min_confidence: filters.min_confidence || undefined,
   };
 
-  const anomalies = async (payload) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const { data } = await aiApi.anomalies(payload);
-      setData(data);
-      return data;
-    } catch (err) {
-      setError(err);
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return { loading, data, error, forecast, anomalies };
+  return useQuery({
+    queryKey: ["ai", "insights", params],
+    queryFn: () => aiInsightsApi.listInsights(params),
+    staleTime: 15_000,
+  });
 };
-
-export default useAIInsights;

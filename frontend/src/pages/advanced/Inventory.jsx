@@ -1,12 +1,12 @@
 import React, { useContext, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import MainLayout from "../../layouts/MainLayout.jsx";
-import Card from "../../components/ui/Card.jsx";
+
 import Banner from "../../components/ui/Banner.jsx";
+import Button from "../../components/ui/Button.jsx";
+import Card from "../../components/ui/Card.jsx";
 import ErrorBox from "../../components/ui/ErrorBox.jsx";
 import Input from "../../components/ui/Input.jsx";
 import Select from "../../components/ui/Select.jsx";
-import Button from "../../components/ui/Button.jsx";
 import Tag from "../../components/ui/Tag.jsx";
 import inventoryApi from "../../api/inventoryApi.js";
 import productsApi from "../../api/productsApi.js";
@@ -23,7 +23,7 @@ const Inventory = () => {
     movement_type: "ADJUST",
     reference_type: "MANUAL",
   });
-  const [error, setError] = useState(null);
+  const [formError, setFormError] = useState(null);
 
   const summaryQuery = useQuery({
     queryKey: ["inventory", "summary"],
@@ -47,9 +47,9 @@ const Inventory = () => {
       queryClient.invalidateQueries(["inventory", "summary"]);
       queryClient.invalidateQueries(["inventory", "movements"]);
       setForm({ product_id: "", quantity: "", movement_type: "ADJUST", reference_type: "MANUAL" });
-      setError(null);
+      setFormError(null);
     },
-    onError: (err) => setError(err?.message || "Failed to create movement"),
+    onError: (err) => setFormError(err?.message || "Failed to create movement"),
   });
 
   const handleChange = (e) => {
@@ -60,10 +60,10 @@ const Inventory = () => {
   const handleSubmit = (e) => {
     e.preventDefault();
     if (!form.product_id || !form.quantity) {
-      setError("Product and quantity required");
+      setFormError("Product and quantity required");
       return;
     }
-    setError(null);
+    setFormError(null);
     movementMutation.mutate({
       product_id: form.product_id,
       quantity: form.quantity,
@@ -88,7 +88,7 @@ const Inventory = () => {
   );
 
   return (
-    <MainLayout>
+    <div className="u-grid u-gap-4">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: spacing.md }}>
         <div>
           <h1 style={{ margin: 0, color: colors.text }}>Inventory</h1>
@@ -102,7 +102,7 @@ const Inventory = () => {
       <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: spacing.lg, alignItems: "start" }}>
         <Card title="Stock Summary">
           {summaryQuery.isLoading && <Banner message="Loading summary..." variant="info" />}
-          {error && <ErrorBox message={error} />}
+          {summaryQuery.isError && <ErrorBox message={summaryQuery.error?.message || "Failed to load summary"} />}
           {!summaryQuery.isLoading && summaryItems.length === 0 && (
             <Banner message="No products yet. Add products to start tracking inventory." variant="info" />
           )}
@@ -120,7 +120,7 @@ const Inventory = () => {
               >
                 <div>
                   <div style={{ fontWeight: 700, color: colors.text }}>{item.product_name}</div>
-                  <div style={{ color: colors.textMuted }}>{item.sku || "—"}</div>
+                  <div style={{ color: colors.textMuted }}>{item.sku || "?"}</div>
                 </div>
                 <div style={{ color: colors.text }}>
                   Stock: <strong>{item.stock_quantity}</strong>
@@ -134,7 +134,8 @@ const Inventory = () => {
         </Card>
 
         <Card title="Manual adjustment">
-          {movementMutation.isError && <ErrorBox message={error || "Failed"} />}
+          {productsQuery.isError && <ErrorBox message={productsQuery.error?.message || "Failed to load products"} />}
+          {formError && <ErrorBox message={formError} />}
           <form onSubmit={handleSubmit} style={{ display: "grid", gap: spacing.md }}>
             <Select
               label="Product"
@@ -155,6 +156,7 @@ const Inventory = () => {
 
       <Card title="Recent movements" style={{ marginTop: spacing.lg }}>
         {movementsQuery.isLoading && <Banner message="Loading movements..." variant="info" />}
+        {movementsQuery.isError && <ErrorBox message={movementsQuery.error?.message || "Failed to load movements"} />}
         <div style={{ display: "grid", gap: spacing.sm }}>
           {movements.map((mv) => (
             <div
@@ -177,7 +179,7 @@ const Inventory = () => {
           )}
         </div>
       </Card>
-    </MainLayout>
+    </div>
   );
 };
 

@@ -15,7 +15,7 @@ const CustomerInvoices = () => {
       <h2 style={{ marginTop: 0 }}>{t("nav.invoices", { defaultValue: "Invoices" })}</h2>
       <div className="card" style={{ display: "grid", gap: "0.75rem" }}>
         {items.length === 0 && (
-          <p style={{ margin: 0, color: "#64748b" }}>
+          <p style={{ margin: 0, color: "var(--color-muted)" }}>
             {t("status.noData", { defaultValue: "No data available" })}
           </p>
         )}
@@ -24,7 +24,7 @@ const CustomerInvoices = () => {
             key={inv.id || inv.number}
             style={{
               padding: "0.75rem",
-              border: "1px solid #e2e8f0",
+              border: "1px solid var(--color-border)",
               borderRadius: "10px",
               display: "grid",
               gap: "0.35rem",
@@ -32,12 +32,12 @@ const CustomerInvoices = () => {
           >
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div style={{ fontWeight: 700 }}>{inv.number || inv.id}</div>
-              <span style={{ color: "#475569" }}>{inv.status || t("status.loading", { defaultValue: "Pending" })}</span>
+              <span style={{ color: "var(--color-muted)" }}>{inv.status || t("status.loading", { defaultValue: "Pending" })}</span>
             </div>
-            <div style={{ color: "#475569" }}>
+            <div style={{ color: "var(--color-muted)" }}>
               {t("portal.customer", { defaultValue: "Customer Portal" })}: {inv.customer_name || "-"}
             </div>
-            <div style={{ color: "#64748b", fontSize: "0.95rem" }}>
+            <div style={{ color: "var(--color-muted)", fontSize: "0.95rem" }}>
               {t("status.success", { defaultValue: "Total" })}: {inv.total_amount || inv.total} ·{" "}
               {t("status.error", { defaultValue: "Due" })}: {inv.due_date || "-"}
             </div>

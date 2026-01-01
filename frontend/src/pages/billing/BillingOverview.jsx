@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import axiosClient from "../../api/axiosClient";
+import billingApi from "../../api/billingApi.js";
 
 const formatCurrency = (value, currency = "usd") => {
   if (value === null || value === undefined) return "N/A";
@@ -14,9 +14,9 @@ const formatCurrency = (value, currency = "usd") => {
 
 const ProgressBar = ({ value = 0, limit, warn = false }) => {
   const percentage = limit ? Math.min((value / limit) * 100, 100) : 0;
-  const bg = warn ? "#f97316" : "#22c55e";
+  const bg = warn ? "var(--color-primary)" : "var(--color-secondary)";
   return (
-    <div style={{ background: "#e2e8f0", borderRadius: "999px", height: "10px", overflow: "hidden" }}>
+    <div style={{ background: "var(--color-border)", borderRadius: "999px", height: "10px", overflow: "hidden" }}>
       <div
         style={{
           width: `${percentage}%`,
@@ -38,8 +38,8 @@ const BillingOverview = () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await axiosClient.get("/billing/overview");
-      setData(res.data);
+      const res = await billingApi.getOverview();
+      setData(res);
     } catch (err) {
       setError(err);
     } finally {
@@ -91,7 +91,14 @@ const BillingOverview = () => {
 
   if (error) {
     return (
-      <div style={{ ...styles.card, border: "1px solid #fecdd3", background: "#fff1f2", color: "#9f1239" }}>
+      <div
+        style={{
+          ...styles.card,
+          border: "1px solid var(--color-primary)",
+          background: "color-mix(in srgb, var(--color-primary) 12%, var(--color-surface))",
+          color: "var(--color-text)",
+        }}
+      >
         <p style={{ margin: 0, fontWeight: 700 }}>Failed to load billing overview.</p>
         <p style={{ margin: "0.25rem 0 0 0" }}>{error?.message || "Please try again."}</p>
         <button style={styles.buttonGhost} onClick={load}>
@@ -109,7 +116,7 @@ const BillingOverview = () => {
       <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", alignItems: "center" }}>
         <div>
           <h1 style={{ margin: 0 }}>Billing overview</h1>
-          <p style={{ margin: "0.25rem 0 0 0", color: "#475569" }}>
+          <p style={{ margin: "0.25rem 0 0 0", color: "var(--color-muted)" }}>
             Current plan and usage vs limits.
           </p>
         </div>
@@ -125,7 +132,7 @@ const BillingOverview = () => {
           <div>
             <p style={styles.label}>Current plan</p>
             <h2 style={{ margin: "0.15rem 0" }}>{plan.plan_name || "Unknown plan"}</h2>
-            <p style={{ margin: 0, color: "#475569" }}>
+            <p style={{ margin: 0, color: "var(--color-muted)" }}>
               {plan.price !== null && plan.price !== undefined
                 ? `${formatCurrency(plan.price, plan.currency)} / ${plan.billing_period || "period"}`
                 : "Price not available"}
@@ -150,15 +157,15 @@ const BillingOverview = () => {
             return (
               <div key={row.key} style={{ display: "grid", gap: "0.35rem" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <span style={{ color: "#0f172a", fontWeight: 600 }}>{row.label}</span>
-                  <span style={{ color: warn ? "#c2410c" : "#475569", fontWeight: 600 }}>
+                  <span style={{ color: "var(--color-text)", fontWeight: 600 }}>{row.label}</span>
+                  <span style={{ color: warn ? "var(--color-primary)" : "var(--color-muted)", fontWeight: 600 }}>
                     {row.value}
                     {row.limit ? ` / ${row.limit}` : " • Unlimited"}
                   </span>
                 </div>
                 <ProgressBar value={row.value} limit={row.limit} warn={warn} />
                 {warn && (
-                  <span style={{ color: "#c2410c", fontSize: "0.9rem" }}>
+                  <span style={{ color: "var(--color-primary)", fontSize: "0.9rem" }}>
                     You’ve used {Math.round((row.value / row.limit) * 100)}% of your limit.
                   </span>
                 )}
@@ -173,46 +180,46 @@ const BillingOverview = () => {
 
 const styles = {
   card: {
-    background: "#fff",
-    border: "1px solid #e2e8f0",
+    background: "var(--color-surface)",
+    border: "1px solid var(--color-border)",
     borderRadius: "14px",
     padding: "1.25rem",
-    boxShadow: "0 4px 12px rgba(15, 23, 42, 0.04)",
+    boxShadow: "0 4px 12px color-mix(in srgb, var(--color-text) 10%, transparent)",
   },
   pill: {
     borderRadius: "999px",
-    background: "#eef2ff",
-    color: "#4338ca",
+    background: "color-mix(in srgb, var(--color-secondary) 18%, var(--color-surface))",
+    color: "var(--color-text)",
     padding: "0.35rem 0.75rem",
     fontWeight: 700,
     fontSize: "0.9rem",
-    border: "1px solid #c7d2fe",
+    border: "1px solid color-mix(in srgb, var(--color-secondary) 40%, var(--color-border))",
   },
   warningPill: {
     borderRadius: "999px",
-    background: "#fff7ed",
-    color: "#c2410c",
+    background: "color-mix(in srgb, var(--color-primary) 12%, var(--color-surface))",
+    color: "var(--color-text)",
     padding: "0.3rem 0.7rem",
     fontWeight: 700,
-    border: "1px solid #fed7aa",
+    border: "1px solid color-mix(in srgb, var(--color-primary) 40%, var(--color-border))",
   },
-  label: { margin: 0, textTransform: "uppercase", fontSize: "0.75rem", letterSpacing: "0.06em", color: "#94a3b8" },
+  label: { margin: 0, textTransform: "uppercase", fontSize: "0.75rem", letterSpacing: "0.06em", color: "var(--color-muted)" },
   buttonPrimary: {
-    background: "#6366f1",
-    color: "#fff",
+    background: "var(--color-primary)",
+    color: "var(--color-on-primary)",
     padding: "0.65rem 1rem",
     borderRadius: "10px",
-    border: "1px solid #4f46e5",
+    border: "1px solid var(--color-primary)",
     textDecoration: "none",
     fontWeight: 700,
   },
   buttonGhost: {
     marginTop: "0.75rem",
-    background: "#fff",
-    color: "#be123c",
+    background: "var(--color-surface)",
+    color: "var(--color-primary)",
     padding: "0.55rem 0.9rem",
     borderRadius: "10px",
-    border: "1px solid #fda4af",
+    border: "1px solid var(--color-primary)",
     cursor: "pointer",
     fontWeight: 600,
   },
@@ -221,13 +228,13 @@ const styles = {
     display: "grid",
     gap: "0.75rem",
     justifyItems: "center",
-    color: "#0f172a",
+    color: "var(--color-text)",
   },
   spinner: {
     width: "32px",
     height: "32px",
-    border: "4px solid #e2e8f0",
-    borderTopColor: "#6366f1",
+    border: "4px solid var(--color-border)",
+    borderTopColor: "var(--color-primary)",
     borderRadius: "50%",
     animation: "spin 0.8s linear infinite",
   },

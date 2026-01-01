@@ -1,4 +1,4 @@
-import axiosClient from "./axiosClient";
+import axiosClient from "./index";
 
 const PORTAL_TOKEN_QUERY_KEY = "portal_token";
 const PORTAL_TOKEN_STORAGE_KEY = "portal_token";
@@ -41,11 +41,22 @@ const withPortalHeaders = (config = {}) => {
   const portalToken = getPortalToken();
   const headers = { ...(config.headers || {}) };
 
+  const tenantId =
+    import.meta.env.VITE_TENANT_ID ||
+    (typeof window !== "undefined" ? localStorage.getItem("tenant_id") : null);
+
+  const actorId =
+    import.meta.env.VITE_ACTOR_ID ||
+    (typeof window !== "undefined" ? localStorage.getItem("actor_id") : null);
+
+  if (!tenantId) {
+    throw new Error("Missing tenant id: set VITE_TENANT_ID (or localStorage tenant_id)");
+  }
+
+  headers["X-Tenant-Id"] = tenantId;
+  if (actorId) headers["X-Actor-Id"] = actorId;
+
   if (portalToken) {
-    // Use portal token either as Authorization (when no user token) or as a dedicated header for backend routing.
-    if (!headers.Authorization) {
-      headers.Authorization = `Bearer ${portalToken}`;
-    }
     headers["X-Portal-Token"] = headers["X-Portal-Token"] || portalToken;
   }
 

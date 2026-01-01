@@ -1,22 +1,11 @@
-import axiosClient from "./axiosClient";
+import { api } from "./generated/index.js";
 
 const customersApi = {
-  async listCustomers(params = {}) {
-    const response = await axiosClient.get("/customers", { params });
-    return response.data;
-  },
-  async createCustomer(payload) {
-    const response = await axiosClient.post("/customers", payload);
-    return response.data;
-  },
-  async updateCustomer(id, payload) {
-    const response = await axiosClient.put(`/customers/${id}`, payload);
-    return response.data;
-  },
-  async deleteCustomer(id) {
-    const response = await axiosClient.delete(`/customers/${id}`);
-    return response.data;
-  },
+  listCustomers: (params = {}) => api.customers.listCustomers(params),
+  getCustomer: (id) => api.customers.getCustomer(id),
+  createCustomer: (payload) => api.customers.createCustomer(payload),
+  updateCustomer: (id, payload) => api.customers.updateCustomer(id, payload),
+  deleteCustomer: (id) => api.customers.deleteCustomer(id),
 };
 
 export default customersApi;

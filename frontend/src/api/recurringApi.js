@@ -1,28 +1,11 @@
-import axiosClient from "./axiosClient";
-
-const base = "/recurring-invoices";
+import { api } from "./generated/index.js";
 
 const recurringApi = {
-  async list(params = {}) {
-    const response = await axiosClient.get(base + "/", { params });
-    return response.data;
-  },
-  async create(payload) {
-    const response = await axiosClient.post(base + "/", payload);
-    return response.data;
-  },
-  async update(id, payload) {
-    const response = await axiosClient.patch(`${base}/${id}`, payload);
-    return response.data;
-  },
-  async remove(id) {
-    const response = await axiosClient.delete(`${base}/${id}`);
-    return response.data;
-  },
-  async runNow(id) {
-    const response = await axiosClient.post(`${base}/${id}/run`);
-    return response.data;
-  },
+  list: (params = {}) => api.recurring.list(params),
+  create: (payload) => api.recurring.create(payload),
+  update: (id, payload) => api.recurring.update(id, payload),
+  remove: (id) => api.recurring.remove(id),
+  runNow: (id) => api.recurring.runNow(id),
 };
 
 export default recurringApi;

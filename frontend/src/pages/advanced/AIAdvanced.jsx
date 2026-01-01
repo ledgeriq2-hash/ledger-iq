@@ -3,7 +3,7 @@ import MainLayout from "../../layouts/MainLayout.jsx";
 import RevenueForecastChart from "../../components/charts/RevenueForecastChart.jsx";
 import AnomalyTimelineChart from "../../components/charts/AnomalyTimelineChart.jsx";
 import Card from "../../components/ui/Card.jsx";
-import Button from "../../components/ui/Button.jsx";
+import EmptyState from "../../components/ui/EmptyState.jsx";
 
 const AIAdvanced = () => {
   return (
@@ -14,12 +14,24 @@ const AIAdvanced = () => {
       </div>
       <div style={{ marginTop: "1rem", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "1rem" }}>
         <Card title="Forecast">
-          <p style={{ color: "#475569" }}>Generate quick forecasts based on recent revenue series.</p>
-          <Button>Run forecast</Button>
+          <div style={{ display: "grid", gap: "0.5rem" }}>
+            <div style={{ color: "var(--color-muted)", fontWeight: 700 }}>Last updated: —</div>
+            <EmptyState
+              compact
+              title="AI results will appear here once connected."
+              message="Forecast output is disabled in this phase."
+            />
+          </div>
         </Card>
         <Card title="Anomaly detection">
-          <p style={{ color: "#475569" }}>Scan for outliers across revenue timeline.</p>
-          <Button>Detect anomalies</Button>
+          <div style={{ display: "grid", gap: "0.5rem" }}>
+            <div style={{ color: "var(--color-muted)", fontWeight: 700 }}>Last updated: —</div>
+            <EmptyState
+              compact
+              title="AI results will appear here once connected."
+              message="Anomaly detection is disabled in this phase."
+            />
+          </div>
         </Card>
       </div>
     </MainLayout>

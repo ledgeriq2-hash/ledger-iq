@@ -25,20 +25,13 @@ class ErrorBoundary extends React.Component {
   render() {
     if (this.state.hasError) {
       return (
-        <div style={{ padding: "2rem", textAlign: "center" }}>
+        <div className="u-pad-5 u-text-center">
           <h2>Something went wrong</h2>
           <p>Please try again, or refresh the page.</p>
           <button
             type="button"
             onClick={this.handleReset}
-            style={{
-              marginTop: "1rem",
-              padding: "0.65rem 1.2rem",
-              borderRadius: "0.5rem",
-              border: "1px solid #d1d5db",
-              background: "#f3f4f6",
-              cursor: "pointer",
-            }}
+            className="kit-button kit-buttonGhost"
           >
             Try again
           </button>

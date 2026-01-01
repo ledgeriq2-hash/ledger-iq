@@ -1,149 +1,212 @@
-import React, { createContext, useCallback, useEffect, useMemo, useState } from "react";
-import authApi from "../api/authApi";
-import { setAuthStateUpdater } from "../api/axiosClient";
+import React, { createContext, useMemo, useState } from "react";
+import authApi from "../api/authApi.js";
+import { ACCESS_TOKEN_STORAGE_KEY } from "../api/index";
+
+const loadStored = (key) => (typeof window !== "undefined" ? localStorage.getItem(key) : null);
 
 export const AuthContext = createContext({
   user: null,
   tenant: null,
+  tenantId: null,
+  actorId: null,
   accessToken: null,
   loading: false,
   error: null,
   login: async () => {},
+  register: async () => {},
   logout: () => {},
   refresh: async () => {},
   fetchCurrentUser: async () => {},
   isAuthenticated: false,
   hasRole: () => false,
   softLaunchBadge: false,
+  setTenantId: () => {},
+  setActorId: () => {},
 });
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
   const [tenant, setTenant] = useState(null);
-  const [accessToken, setAccessToken] = useState(localStorage.getItem("access_token"));
+  const [user, setUser] = useState(null);
+  const [tenantId, setTenantIdState] = useState(
+    import.meta.env.VITE_TENANT_ID || loadStored("tenant_id")
+  );
+  const [actorId, setActorIdState] = useState(
+    import.meta.env.VITE_ACTOR_ID || loadStored("actor_id")
+  );
+  const [accessToken, setAccessTokenState] = useState(loadStored(ACCESS_TOKEN_STORAGE_KEY));
+  const [softLaunchBadge, setSoftLaunchBadge] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [softLaunchBadge, setSoftLaunchBadge] = useState(false);
 
-  const setTokens = useCallback((access, refresh, tenantId) => {
-    if (access) localStorage.setItem("access_token", access);
-    if (refresh) localStorage.setItem("refresh_token", refresh);
-    if (tenantId) localStorage.setItem("tenant_id", tenantId);
-    setAccessToken(access || null);
-  }, []);
+  const roles = useMemo(() => {
+    if (!user) return [];
+    const collected = [];
+    if (user.roles) {
+      collected.push(...(Array.isArray(user.roles) ? user.roles : [user.roles]));
+    }
+    if (user.role) {
+      collected.push(user.role.name || user.role);
+    }
+    if (user.role_id && collected.length === 0) {
+      collected.push("owner");
+    }
+    if (user.is_superuser) {
+      collected.push("owner", "admin");
+    }
+    return collected;
+  }, [user]);
 
-  const clearTokens = useCallback(() => {
-    localStorage.removeItem("access_token");
-    localStorage.removeItem("refresh_token");
-    localStorage.removeItem("tenant_id");
-    setAccessToken(null);
-  }, []);
+  const roleIndex = useMemo(
+    () => roles.map((role) => String(role).toLowerCase()),
+    [roles]
+  );
 
-  useEffect(() => {
-    setAuthStateUpdater(({ accessToken: newAccess }) => {
-      setAccessToken(newAccess || null);
-      if (!newAccess) {
-        setUser(null);
-      }
-    });
-  }, []);
+  const persistToken = (token) => {
+    const next = token || null;
+    setAccessTokenState(next);
+    if (typeof window !== "undefined") {
+      if (next) localStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, next);
+      else localStorage.removeItem(ACCESS_TOKEN_STORAGE_KEY);
+    }
+  };
 
-  const fetchCurrentUser = useCallback(async () => {
-    if (!localStorage.getItem("access_token")) return null;
+  const setTenantId = (value) => {
+    const next = value || null;
+    setTenantIdState(next);
+    if (typeof window !== "undefined") {
+      if (next) localStorage.setItem("tenant_id", next);
+      else localStorage.removeItem("tenant_id");
+    }
+  };
+
+  const setActorId = (value) => {
+    const next = value || null;
+    setActorIdState(next);
+    if (typeof window !== "undefined") {
+      if (next) localStorage.setItem("actor_id", next);
+      else localStorage.removeItem("actor_id");
+    }
+  };
+
+  const login = async (credentials) => {
     setLoading(true);
+    setError(null);
     try {
-      const data = await authApi.me();
-      setUser(data.user || data);
-      setTenant(data.tenant || null);
-      setSoftLaunchBadge(Boolean(data.soft_launch_badge));
-      return data;
-    } catch {
-      setUser(null);
-      setTenant(null);
-      setSoftLaunchBadge(false);
+      const res = await authApi.login(credentials);
+      const tokens = res?.tokens || res?.token;
+      persistToken(tokens?.access_token || null);
+      const tenantPayload = res?.tenant || null;
+      const userPayload = res?.user || null;
+      setTenant(tenantPayload);
+      setUser(userPayload);
+      setTenantId(tenantPayload?.id || credentials?.tenant || tenantId);
+      setActorId(userPayload?.id || null);
+      setSoftLaunchBadge(res?.soft_launch_badge === true);
+      return res;
+    } catch (err) {
+      setError(err?.message || "Login failed");
+      throw err;
     } finally {
       setLoading(false);
     }
-  }, []);
+  };
 
-  const login = useCallback(
-    async ({ email, password, tenant }) => {
-      setLoading(true);
-      setError(null);
-      try {
-        const data = await authApi.login({ email, password, tenant });
-        const access = data?.tokens?.access_token || data?.access_token;
-        const refreshToken = data?.tokens?.refresh_token || data?.refresh_token;
-        const tenantId = data?.tenant?.id || tenant;
-        setTokens(access, refreshToken, tenantId);
-        setUser(data?.user || data);
-        setTenant(data?.tenant || null);
-        setSoftLaunchBadge(Boolean(data?.soft_launch_badge));
-        return data;
-      } catch (err) {
-        setError(err?.response?.data?.detail || "Login failed");
-        throw err;
-      } finally {
-        setLoading(false);
-      }
-    },
-    [setTokens]
-  );
-
-  const refresh = useCallback(async () => {
-    const refreshToken = localStorage.getItem("refresh_token");
-    if (!refreshToken) return null;
-    const data = await authApi.refresh({ refresh_token: refreshToken });
-    const access = data?.access_token || data?.tokens?.access_token;
-    const refreshValue = data?.refresh_token || data?.tokens?.refresh_token;
-    setTokens(access, refreshValue, localStorage.getItem("tenant_id"));
-    return data;
-  }, [setTokens]);
-
-  const logout = useCallback(async () => {
-    clearTokens();
-    setUser(null);
-    setTenant(null);
-    setSoftLaunchBadge(false);
+  const register = async (payload) => {
+    setLoading(true);
+    setError(null);
     try {
-      const refreshToken = localStorage.getItem("refresh_token");
-      await authApi.logout(refreshToken ? { refresh_token: refreshToken } : {});
-    } catch {
-      // ignore logout errors
+      const res = await authApi.register(payload);
+      const tokens = res?.tokens || res?.token;
+      persistToken(tokens?.access_token || null);
+      const tenantPayload = res?.tenant || null;
+      const userPayload = res?.user || null;
+      setTenant(tenantPayload);
+      setUser(userPayload);
+      setTenantId(tenantPayload?.id || tenantId);
+      setActorId(userPayload?.id || null);
+      setSoftLaunchBadge(res?.soft_launch_badge === true);
+      return res;
+    } catch (err) {
+      setError(err?.message || "Signup failed");
+      throw err;
+    } finally {
+      setLoading(false);
     }
-  }, [clearTokens]);
+  };
 
-  useEffect(() => {
-    fetchCurrentUser();
-  }, [fetchCurrentUser]);
+  const refresh = async (payload = {}) => {
+    const res = await authApi.refresh(payload);
+    if (res?.access_token) {
+      persistToken(res.access_token);
+    }
+    return res;
+  };
 
-  const isAuthenticated = !!accessToken && !!user;
+  const fetchCurrentUser = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await authApi.me();
+      setUser(res?.user || res || null);
+      if (res?.tenant) {
+        setTenant(res.tenant);
+        setTenantId(res.tenant.id || tenantId);
+      }
+      return res;
+    } catch (err) {
+      setError(err?.message || "Failed to load current user");
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  const hasRole = useCallback(
-    (role) => {
-      if (!role || !user) return false;
-      const currentRole = user.role?.name || user.role || user.role_id;
-      return String(currentRole || "").toLowerCase() === String(role).toLowerCase();
-    },
-    [user]
-  );
+  const logout = async () => {
+    try {
+      await authApi.logout();
+    } catch (err) {
+      console.warn("Logout failed", err);
+    }
+    persistToken(null);
+    setTenant(null);
+    setUser(null);
+    setTenantId(null);
+    setActorId(null);
+    setSoftLaunchBadge(false);
+    setError(null);
+  };
 
   const value = useMemo(
     () => ({
       user,
       tenant,
+      tenantId,
+      actorId,
       accessToken,
       loading,
       error,
       login,
+      register,
       logout,
       refresh,
       fetchCurrentUser,
-      isAuthenticated,
-      hasRole,
+      isAuthenticated: Boolean(tenantId),
+      hasRole: (role) => roleIndex.includes(String(role).toLowerCase()),
       softLaunchBadge,
+      setTenantId,
+      setActorId,
     }),
-    [user, tenant, accessToken, loading, error, login, logout, refresh, fetchCurrentUser, isAuthenticated, hasRole, softLaunchBadge]
+    [
+      user,
+      tenant,
+      tenantId,
+      actorId,
+      accessToken,
+      loading,
+      error,
+      softLaunchBadge,
+      roleIndex,
+    ]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

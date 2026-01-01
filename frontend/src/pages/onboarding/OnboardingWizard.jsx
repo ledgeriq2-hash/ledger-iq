@@ -1,38 +1,23 @@
 import React, { useEffect, useMemo, useState } from "react";
+
+import { useLocation } from "react-router-dom";
 import MainLayout from "../../layouts/MainLayout.jsx";
 import Card from "../../components/ui/Card.jsx";
 import Input from "../../components/ui/Input.jsx";
+import Select from "../../components/ui/Select.jsx";
 import Button from "../../components/ui/Button.jsx";
 import onboardingApi from "../../api/onboardingApi.js";
 import useNotifications from "../../hooks/useNotifications.js";
 import useAuth from "../../hooks/useAuth.js";
+import StatusPill from "../../components/kit/StatusPill.jsx";
+import { TENANT_ERROR_QUERY, TENANT_MISSING_ERROR } from "../../constants/tenantErrors.js";
 
 const StepBadge = ({ label, active, done }) => (
-  <div
-    style={{
-      display: "flex",
-      alignItems: "center",
-      gap: "0.5rem",
-      color: active ? "#0f172a" : "#475569",
-      fontWeight: active ? 700 : 600,
-    }}
-  >
-    <span
-      style={{
-        width: "24px",
-        height: "24px",
-        borderRadius: "999px",
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        background: done ? "#22c55e" : active ? "#0ea5e9" : "#e2e8f0",
-        color: done || active ? "#fff" : "#475569",
-        fontSize: "0.85rem",
-      }}
-    >
+  <div className={`stepBadge ${active ? "isActive" : ""}`.trim()} data-done={done ? "true" : "false"}>
+    <span className="stepBadgeDot" aria-hidden="true">
       {done ? "✓" : label[0]}
     </span>
-    {label}
+    <span className="stepBadgeText">{label}</span>
   </div>
 );
 
@@ -47,6 +32,24 @@ const OnboardingWizard = () => {
   });
   const { addNotification } = useNotifications();
   const { tenant } = useAuth();
+  const location = useLocation();
+  const [tenantErrorNotified, setTenantErrorNotified] = useState(false);
+
+  const tenantErrorCode = useMemo(
+    () => new URLSearchParams(location.search).get(TENANT_ERROR_QUERY),
+    [location.search]
+  );
+  const showTenantError = tenantErrorCode === TENANT_MISSING_ERROR.code;
+
+  useEffect(() => {
+    if (showTenantError && !tenantErrorNotified) {
+      addNotification({
+        title: "Tenant required",
+        message: TENANT_MISSING_ERROR.message,
+      });
+      setTenantErrorNotified(true);
+    }
+  }, [showTenantError, tenantErrorNotified, addNotification]);
 
   const load = async () => {
     setLoading(true);
@@ -107,25 +110,30 @@ const OnboardingWizard = () => {
 
   return (
     <MainLayout>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-        <div>
-          <h2 style={{ margin: 0 }}>Welcome, {tenant?.name || "team"}</h2>
-          <p style={{ margin: 0, color: "#475569" }}>Guide your workspace setup in three quick steps.</p>
+      <div className="u-flex u-justify-between u-items-center u-wrap u-gap-4 u-m-0 wizardHeader">
+        <div className="u-grid u-gap-1">
+          <h2 className="u-m-0">Welcome, {tenant?.name || "team"}</h2>
+          <p className="u-m-0 u-text-muted">Guide your workspace setup in three quick steps.</p>
         </div>
-        {loading && <span style={{ color: "#475569" }}>Saving...</span>}
+        {loading && <span className="u-text-muted">Saving...</span>}
       </div>
+      {showTenantError ? (
+        <div className="u-mt-3">
+          <StatusPill tone="danger">{TENANT_MISSING_ERROR.message}</StatusPill>
+        </div>
+      ) : null}
 
-      <div style={{ display: "grid", gap: "1rem", gridTemplateColumns: "1fr 0.45fr" }}>
+      <div className="wizardGrid">
         <Card title="Onboarding wizard">
-          <div style={{ display: "grid", gap: "1rem" }}>
-            <div style={{ display: "grid", gap: "0.5rem", gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }}>
-              <StepBadge label="Profile" active={currentStep === "profile"} done={status?.profile_completed} />
-              <StepBadge label="Sample" active={currentStep === "sample"} done={status?.sample_data_loaded} />
+          <div className="u-grid u-gap-4">
+            <div className="wizardStepsGrid">
+              <StepBadge label="Profile" active={currentStep === "profile"} done={Boolean(status?.profile_completed)} />
+              <StepBadge label="Sample" active={currentStep === "sample"} done={Boolean(status?.sample_data_loaded)} />
               <StepBadge label="Done" active={currentStep === "done"} done={currentStep === "done"} />
             </div>
 
             {currentStep === "profile" && (
-              <div style={{ display: "grid", gap: "0.75rem" }}>
+              <div className="u-grid u-gap-4">
                 <Input
                   label="Logo URL"
                   name="logo_url"
@@ -133,19 +141,14 @@ const OnboardingWizard = () => {
                   onChange={(e) => setForm((prev) => ({ ...prev, logo_url: e.target.value }))}
                   placeholder="https://..."
                 />
-                <div style={{ display: "grid", gap: "0.5rem", gridTemplateColumns: "repeat(auto-fit, minmax(140px,1fr))" }}>
-                  <div>
-                    <label style={{ display: "block", fontWeight: 600, color: "#0f172a", marginBottom: "0.35rem" }}>Currency</label>
-                    <select
-                      value={form.currency}
-                      onChange={(e) => setForm((prev) => ({ ...prev, currency: e.target.value }))}
-                      style={{ width: "100%", padding: "0.55rem 0.65rem", borderRadius: "8px", border: "1px solid #e2e8f0" }}
-                    >
-                      {["USD", "EUR", "GBP", "AED", "CAD"].map((c) => (
-                        <option key={c}>{c}</option>
-                      ))}
-                    </select>
-                  </div>
+
+                <div className="wizardProfileGrid">
+                  <Select
+                    label="Currency"
+                    value={form.currency}
+                    onChange={(e) => setForm((prev) => ({ ...prev, currency: e.target.value }))}
+                    options={["USD", "EUR", "GBP", "AED", "CAD"].map((c) => ({ label: c, value: c }))}
+                  />
                   <Input
                     label="Fiscal year start (MM-DD)"
                     name="fiscal_year_start"
@@ -153,21 +156,18 @@ const OnboardingWizard = () => {
                     onChange={(e) => setForm((prev) => ({ ...prev, fiscal_year_start: e.target.value }))}
                     placeholder="01-01"
                   />
-                  <div>
-                    <label style={{ display: "block", fontWeight: 600, color: "#0f172a", marginBottom: "0.35rem" }}>
-                      Chart of accounts preset
-                    </label>
-                    <select
-                      value={form.chart_preset}
-                      onChange={(e) => setForm((prev) => ({ ...prev, chart_preset: e.target.value }))}
-                      style={{ width: "100%", padding: "0.55rem 0.65rem", borderRadius: "8px", border: "1px solid #e2e8f0" }}
-                    >
-                      <option value="basic">Basic</option>
-                      <option value="saas">SaaS</option>
-                      <option value="services">Professional Services</option>
-                    </select>
-                  </div>
+                  <Select
+                    label="Chart of accounts preset"
+                    value={form.chart_preset}
+                    onChange={(e) => setForm((prev) => ({ ...prev, chart_preset: e.target.value }))}
+                    options={[
+                      { label: "Basic", value: "basic" },
+                      { label: "SaaS", value: "saas" },
+                      { label: "Professional Services", value: "services" },
+                    ]}
+                  />
                 </div>
+
                 <Button onClick={saveProfile} disabled={disabled}>
                   Save & Continue
                 </Button>
@@ -175,14 +175,14 @@ const OnboardingWizard = () => {
             )}
 
             {currentStep === "sample" && (
-              <div style={{ display: "grid", gap: "0.75rem" }}>
-                <p style={{ color: "#475569", margin: 0 }}>
+              <div className="u-grid u-gap-4">
+                <p className="u-text-muted u-m-0">
                   Populate this workspace with a few customers and invoices to explore flows. You can remove them later.
                 </p>
                 <Button onClick={loadSampleData} disabled={disabled || status?.sample_data_loaded}>
                   {status?.sample_data_loaded ? "Sample data ready" : "Create sample data"}
                 </Button>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div className="wizardActionsRow">
                   <Button variant="ghost" onClick={() => setStatus((prev) => ({ ...prev, step: "profile" }))}>
                     ← Back
                   </Button>
@@ -194,11 +194,11 @@ const OnboardingWizard = () => {
             )}
 
             {currentStep === "done" && (
-              <div style={{ display: "grid", gap: "0.75rem" }}>
-                <p style={{ color: "#475569", margin: 0 }}>
+              <div className="u-grid u-gap-4">
+                <p className="u-text-muted u-m-0">
                   You’re ready! Invite teammates, create your first invoice, or jump into reports.
                 </p>
-                <div style={{ display: "grid", gap: "0.5rem" }}>
+                <div className="u-grid u-gap-2">
                   <Button onClick={markDone} disabled={disabled}>
                     Mark as complete
                   </Button>
@@ -212,7 +212,7 @@ const OnboardingWizard = () => {
         </Card>
 
         <Card title="Progress">
-          <div style={{ display: "grid", gap: "0.5rem", color: "#475569" }}>
+          <div className="u-grid u-gap-2 u-text-muted">
             <div>Logo: {status?.logo_url ? "Added" : "Pending"}</div>
             <div>Currency: {status?.currency || "USD"}</div>
             <div>Fiscal year: {status?.fiscal_year_start || "01-01"}</div>

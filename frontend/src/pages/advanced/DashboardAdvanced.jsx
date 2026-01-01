@@ -1,4 +1,5 @@
 import React from "react";
+
 import MainLayout from "../../layouts/MainLayout.jsx";
 import RevenueForecastChart from "../../components/charts/RevenueForecastChart.jsx";
 import CashflowChart from "../../components/charts/CashflowChart.jsx";
@@ -13,12 +14,12 @@ const DashboardAdvanced = () => {
 
   return (
     <MainLayout>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "1rem" }}>
-        <RevenueForecastChart />
-        <CashflowChart />
-        <AnomalyTimelineChart />
-      </div>
-      <div style={{ marginTop: "1rem" }}>
+      <div className="u-grid u-gap-4">
+        <div className="cardGridBasic">
+          <RevenueForecastChart />
+          <CashflowChart />
+          <AnomalyTimelineChart />
+        </div>
         <GenericTable
           title="Top customers"
           columns={[
@@ -33,3 +34,4 @@ const DashboardAdvanced = () => {
 };
 
 export default DashboardAdvanced;
+

@@ -1,10 +1,13 @@
-import axiosClient from "./axiosClient";
+import { api } from "./generated/index.js";
 
 const aiApi = {
-  forecast: (data) => axiosClient.post("/ai/forecast", data),
-  anomalies: (data) => axiosClient.post("/ai/anomaly", data),
-  logs: () => axiosClient.get("/ai/logs"),
-  summary: (payload) => axiosClient.post("/ai/summary", payload),
+  overview: () => api.ai.overview(),
+  summary: (params) => api.ai.summary(params),
+  forecast: (payload) => api.ai.forecast(payload),
+  anomalies: (payload) => api.ai.anomalies(payload),
+  listLogs: (params = {}) => api.ai.listLogs(params),
+  listRuns: (params = {}) => api.ai.listRuns(params),
+  getLog: (id) => api.ai.getLog(id),
 };
 
 export default aiApi;

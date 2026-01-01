@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
+
 import MainLayout from "../../layouts/MainLayout.jsx";
 import GenericTable from "../../components/tables/GenericTable.jsx";
 import CustomerForm from "../../components/forms/CustomerForm.jsx";
 import Card from "../../components/ui/Card.jsx";
+import Button from "../../components/ui/Button.jsx";
 import customersApi from "../../api/customersApi.js";
 
 const CustomersBasic = () => {
@@ -16,8 +18,9 @@ const CustomersBasic = () => {
     setError(null);
     try {
       const data = await customersApi.listCustomers();
-      setCustomers(data || []);
-    } catch (err) {
+      const items = Array.isArray(data?.items) ? data.items : Array.isArray(data) ? data : [];
+      setCustomers(items);
+    } catch {
       setError("Failed to load customers");
     } finally {
       setLoading(false);
@@ -37,7 +40,7 @@ const CustomersBasic = () => {
       }
       setEditing(null);
       await loadCustomers();
-    } catch (err) {
+    } catch {
       setError("Save failed");
     }
   };
@@ -65,40 +68,31 @@ const CustomersBasic = () => {
     <MainLayout>
       {!loading && customers.length === 0 && (
         <Card title="Start with your first customer">
-          <p style={{ color: "#475569", marginTop: 0 }}>
+          <p className="u-text-muted u-m-0">
             Add a customer or run the onboarding wizard to load a few samples and see invoices flow end-to-end.
           </p>
-          <div style={{ display: "flex", gap: "0.5rem" }}>
-            <button
-              onClick={() => setEditing({})}
-              style={{ padding: "0.55rem 0.9rem", borderRadius: "8px", border: "1px solid #0ea5e9", background: "#0ea5e9", color: "#fff" }}
-            >
-              Add customer
-            </button>
-            <a href="/onboarding" style={{ color: "#2563eb", textDecoration: "none", alignSelf: "center" }}>
-              Open onboarding →
+          <div className="u-flex u-gap-2 u-wrap">
+            <Button onClick={() => setEditing({})}>Add customer</Button>
+            <a href="/onboarding" className="linkInline">
+              Open onboarding ?
             </a>
           </div>
         </Card>
       )}
-      <div style={{ display: "grid", gap: "1rem", gridTemplateColumns: "2fr 1fr" }}>
+
+      <div className="splitGrid">
         <GenericTable
           title={loading ? "Customers (loading...)" : "Customers"}
           columns={columns}
           data={customers}
-          actions={{
-            onEdit: (row) => setEditing(row),
-            onDelete: handleDelete,
-          }}
+          actions={{ onEdit: (row) => setEditing(row), onDelete: handleDelete }}
         />
+
         <Card title={editing ? "Edit customer" : "Add customer"}>
-          {error && <div style={{ color: "#ef4444", marginBottom: "0.5rem" }}>{error}</div>}
+          {error && <div className="formError">{error}</div>}
           <CustomerForm initialValues={editing || {}} onSubmit={handleSubmit} submitLabel={editing ? "Update" : "Save"} />
           {editing && (
-            <button
-              style={{ marginTop: "0.5rem", fontSize: "0.85rem", color: "#2563eb" }}
-              onClick={() => setEditing(null)}
-            >
+            <button type="button" className="linkButton" onClick={() => setEditing(null)}>
               Cancel edit
             </button>
           )}
