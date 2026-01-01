@@ -1,74 +1,84 @@
 from __future__ import annotations
 
-import logging
-from importlib import import_module
-
 from fastapi import APIRouter
 
-logger = logging.getLogger(__name__)
+from app.config import get_settings
+
+settings = get_settings()
 
 router = APIRouter(prefix="/api")
 
 
-def _try_router(module_path: str, *, attr: str = "router"):
-    try:
-        module = import_module(module_path)
-    except Exception as exc:
-        logger.warning(
-            "router.skip",
-            extra={"module_path": module_path, "reason": str(exc)},
-        )
-        return None
-    router_obj = getattr(module, attr, None)
-    if router_obj is None:
-        logger.warning(
-            "router.missing",
-            extra={"module_path": module_path, "attr": attr},
-        )
-    return router_obj
-
-
-ROUTES = [
-    ("app.api.settings", "", ["settings"], "router"),
-    ("app.api.v1.dashboard", "/v1", ["dashboard"], "router"),
-    ("app.api.v1.portal", "", ["portal"], "contract_router"),
-    ("app.api.v1.auth", "/v1", ["auth"], "router"),
-    ("app.api.v1.users", "/v1", ["users"], "router"),
-    ("app.api.v1.roles", "/v1", ["roles"], "router"),
-    ("app.api.v1.tenants", "/v1", ["tenants"], "router"),
-    ("app.api.v1.customers", "/v1", ["customers"], "router"),
-    ("app.api.v1.suppliers", "/v1", ["suppliers"], "router"),
-    ("app.api.v1.debts", "/v1", ["debts"], "router"),
-    ("app.api.v1.employees", "/v1", ["employees"], "router"),
-    ("app.api.v1.products", "/v1", ["products"], "router"),
-    ("app.api.v1.invoices", "/v1", ["invoices"], "router"),
-    ("app.api.v1.payments", "/v1", ["payments"], "router"),
-    ("app.api.v1.expenses", "/v1", ["expenses"], "router"),
-    ("app.api.v1.journal_entries", "/v1", ["journal_entries"], "router"),
-    ("app.api.v1.treasury", "/v1", ["treasury"], "router"),
-    ("app.api.v1.accounting_periods", "/v1", ["accounting_periods"], "router"),
-    ("app.api.v1.billing", "/v1", ["billing"], "router"),
-    ("app.api.v1.onboarding", "/v1", ["onboarding"], "router"),
-    ("app.api.v1.gdpr", "/v1", ["gdpr"], "router"),
-    ("app.api.v1.notifications", "/v1", ["notifications"], "router"),
-    ("app.api.v1.portal", "/v1", ["portal"], "router"),
-    ("app.api.v1.reports", "/v1", ["reports"], "router"),
-    ("app.api.v1.ai", "/v1", ["ai"], "router"),
-    ("app.api.v1.ml", "/v1", ["ml"], "router"),
-    ("app.api.v1.dev", "/v1", ["dev"], "router"),
-    ("app.api.v1.admin", "/v1", ["admin"], "router"),
-    ("app.api.v1.feedback", "/v1", ["feedback"], "router"),
-    ("app.api.v1.recurring_invoices", "/v1", ["recurring_invoices"], "router"),
-    ("app.api.v1.inventory", "/v1", ["inventory"], "router"),
-]
-
-for module_path, prefix, tags, attr in ROUTES:
-    router_obj = _try_router(module_path, attr=attr)
-    if router_obj is None:
-        continue
+def _include(router_obj: APIRouter, *, prefix: str, tags: list[str]) -> None:
     if prefix:
         router.include_router(router_obj, prefix=prefix, tags=tags)
     else:
         router.include_router(router_obj, tags=tags)
+
+
+from app.api.v1.customers import router as customers_router
+from app.api.v1.employees import router as employees_router
+from app.api.v1.feedback import router as feedback_router
+from app.api.v1.inventory import router as inventory_router
+from app.api.v1.notifications import router as notifications_router
+from app.api.v1.products import router as products_router
+from app.api.v1.roles import router as roles_router
+from app.api.v1.suppliers import router as suppliers_router
+from app.api.v1.tenants import router as tenants_router
+
+_include(customers_router, prefix="/v1", tags=["customers"])
+_include(employees_router, prefix="/v1", tags=["employees"])
+_include(feedback_router, prefix="/v1", tags=["feedback"])
+_include(inventory_router, prefix="/v1", tags=["inventory"])
+_include(notifications_router, prefix="/v1", tags=["notifications"])
+_include(products_router, prefix="/v1", tags=["products"])
+_include(roles_router, prefix="/v1", tags=["roles"])
+_include(suppliers_router, prefix="/v1", tags=["suppliers"])
+_include(tenants_router, prefix="/v1", tags=["tenants"])
+
+if settings.feature_optional_routes:
+    from app.api.settings import router as settings_router
+    from app.api.v1.admin import router as admin_router
+    from app.api.v1.ai import router as ai_router
+    from app.api.v1.auth import router as auth_router
+    from app.api.v1.billing import router as billing_router
+    from app.api.v1.dashboard import router as dashboard_router
+    from app.api.v1.debts import router as debts_router
+    from app.api.v1.dev import router as dev_router
+    from app.api.v1.expenses import router as expenses_router
+    from app.api.v1.gdpr import router as gdpr_router
+    from app.api.v1.invoices import router as invoices_router
+    from app.api.v1.journal_entries import router as journal_entries_router
+    from app.api.v1.ml import router as ml_router
+    from app.api.v1.onboarding import router as onboarding_router
+    from app.api.v1.payments import router as payments_router
+    from app.api.v1.portal import contract_router as portal_contract_router
+    from app.api.v1.portal import router as portal_router
+    from app.api.v1.recurring_invoices import router as recurring_invoices_router
+    from app.api.v1.reports import router as reports_router
+    from app.api.v1.treasury import router as treasury_router
+    from app.api.v1.users import router as users_router
+
+    _include(settings_router, prefix="", tags=["settings"])
+    _include(dashboard_router, prefix="/v1", tags=["dashboard"])
+    _include(portal_contract_router, prefix="", tags=["portal"])
+    _include(auth_router, prefix="/v1", tags=["auth"])
+    _include(users_router, prefix="/v1", tags=["users"])
+    _include(debts_router, prefix="/v1", tags=["debts"])
+    _include(invoices_router, prefix="/v1", tags=["invoices"])
+    _include(payments_router, prefix="/v1", tags=["payments"])
+    _include(expenses_router, prefix="/v1", tags=["expenses"])
+    _include(journal_entries_router, prefix="/v1", tags=["journal_entries"])
+    _include(treasury_router, prefix="/v1", tags=["treasury"])
+    _include(billing_router, prefix="/v1", tags=["billing"])
+    _include(onboarding_router, prefix="/v1", tags=["onboarding"])
+    _include(gdpr_router, prefix="/v1", tags=["gdpr"])
+    _include(portal_router, prefix="/v1", tags=["portal"])
+    _include(reports_router, prefix="/v1", tags=["reports"])
+    _include(ai_router, prefix="/v1", tags=["ai"])
+    _include(ml_router, prefix="/v1", tags=["ml"])
+    _include(dev_router, prefix="/v1", tags=["dev"])
+    _include(admin_router, prefix="/v1", tags=["admin"])
+    _include(recurring_invoices_router, prefix="/v1", tags=["recurring_invoices"])
 
 __all__ = ["router"]

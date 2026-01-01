@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import sys
 import uuid
@@ -28,6 +29,9 @@ from app.core.security import create_access_token, decode_token  # noqa: E402
 from app.schemas.tenant import TenantPublic  # noqa: E402
 from app.schemas.user import UserPublic  # noqa: E402
 from app.services import tenant_service, user_service  # noqa: E402
+from tests.shims.treasury_models import register_treasury_shims  # noqa: E402
+
+logger = logging.getLogger(__name__)
 
 
 class DummyRedis:
@@ -109,6 +113,7 @@ async def setup_db():
 
     email_service.send_email = _send_email_stub
 
+    register_treasury_shims()
     _strip_server_defaults_for_sqlite()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -186,6 +191,10 @@ def register_owner(client: AsyncClient):
         if response.status_code != 404:
             assert response.status_code == 201, response.text
 
+        logger.warning(
+            "tests.auth.register_fallback",
+            extra={"reason": "auth_register_not_found"},
+        )
         async with async_session_maker() as session:
             tenant = await tenant_service.create_tenant(session, payload["tenant"], scope_id=None)
             user = await user_service.create_user(

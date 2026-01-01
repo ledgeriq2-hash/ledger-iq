@@ -90,6 +90,7 @@ class Settings(BaseSettings):
     show_soft_launch_badge: bool = True
     default_plan_code: str = "free"
     allow_negative_stock: bool = False
+    feature_optional_routes: bool = False
 
     # Rate limiting (requests per window)
     auth_rate_limit_per_minute: int = 60
