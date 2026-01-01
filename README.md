@@ -1,33 +1,176 @@
-# Ledger IQ Backend
+# Ledger IQ (Local dev with Docker)
 
-Backend stack: FastAPI, SQLAlchemy async, Alembic, Celery, Redis, PostgreSQL.
+Runs locally with:
+- Backend: FastAPI + Postgres (via docker-compose)
+- Frontend: Vite + React
 
-## Quick start (Docker)
-1) Copy env templates: `cp .env.example .env` and `cp backend/.env.example backend/.env` (edit secrets).
-2) Build and start: `docker-compose up --build`.
-3) API: http://localhost:8000/health
+Auth/JWT/MFA/RBAC/rate-limits are disabled for local runtime. All API calls require `X-Tenant-Id` and accept optional `X-Actor-Id`.
 
-## Services
-- backend: FastAPI app (`uvicorn app.main:app`)
-- db: PostgreSQL 15
-- redis: cache/broker
-- worker: Celery worker
-- beat: Celery beat (scheduled tasks)
+## Environment setup
+- Backend: copy `backend/.env.example` to `.env.development` (repo root or `backend/`) and fill in any required values for your environment (or copy to `backend/.env` and set `ENV_FILE=backend/.env`). For docker-compose Postgres, set `DATABASE_URL=postgresql+asyncpg://ledgeriq:ledgeriq_password@localhost:5432/ledgeriq`.
+- Frontend: copy `frontend/.env.example` to `frontend/.env` (or keep using PowerShell env vars as shown below).
 
-## Redis (local)
-- Start Redis: `docker-compose up redis` (already included in `docker-compose.yml`).
-- App env: set `REDIS_URL=redis://localhost:6379/0` (defaults to this when using compose).
+Note: for local API usage via curl/Postman, keep `CSRF_ENABLED=false` in your dev env file.
+If you keep CSRF enabled in local dev, POSTs to `/api/v1/ai/*` are CSRF-exempt (dev-only) so you can call the AI forecast/anomaly endpoints without CSRF tokens.
 
-## Migrations
-Run inside backend container: `alembic upgrade head`.
+## Start dependencies (Postgres + Redis)
+```powershell
+docker compose up -d
+```
 
-## Development
-- Hot reload: uses `docker-compose.override.yml` to mount code and `--reload`.
-- Requirements: see `backend/requirements.txt`.
+## Backend (Windows PowerShell)
+```powershell
+cd backend
+python -m venv .venv
+.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
 
-## Soft Launch Onboarding Guide
-- Enable soft launch: set `SOFT_LAUNCH_ENABLED=true` and list pilot slugs in `SOFT_LAUNCH_TENANT_SLUGS`, or use the admin API/CLI to toggle per tenant.
-- Onboard a pilot: run `python -m app.management.onboard_pilot --name "Pilot Co" --slug pilot-co --email owner@example.com --password Secret123!`.
-- Monitor usage/errors: use admin endpoints `/api/v1/admin/tenants/{tenant_id}/overview` or frontend pages `/admin/tenants` and tenant detail.
-- Collect feedback: pilot users click “Send Feedback” in-app; admins view at `/admin/feedback`.
-- Observability: check Prometheus/Grafana (default 9090/3001) and error feed `/api/v1/admin/errors/recent`.
+# optional: create a local env file (git-ignored)
+Copy-Item ..\.env.example ..\.env.development -Force
+Copy-Item .\.env.example .\.env.development -Force
+
+# run migrations
+$env:ENVIRONMENT = "development"
+alembic upgrade head
+
+# run API
+uvicorn app.main:app --reload --port 8000
+```
+
+Health: `http://localhost:8000/health`
+
+## Create a tenant id for local requests
+```powershell
+cd backend
+.venv\Scripts\Activate.ps1
+python -m app.management.onboard_pilot --name "Local Tenant" --slug local-tenant --email owner@example.com --password Secret123!
+```
+Copy the printed `tenant.id` value (UUID) for the next step.
+
+## Get tenant ids in dev (no headers needed)
+Only available when `ENVIRONMENT` is not production and `DEBUG=true`.
+
+```powershell
+Invoke-RestMethod -Method Get "http://localhost:8000/api/v1/dev/tenants"
+```
+
+## Frontend (Windows PowerShell)
+```powershell
+cd frontend
+npm ci
+
+# optional: use a Vite env file (git-ignored)
+Copy-Item .\.env.example .\.env -Force
+
+# required for all API calls
+$env:VITE_TENANT_ID = "<paste-tenant-uuid>"
+# optional (for audit/logging)
+$env:VITE_ACTOR_ID = "<optional-actor-uuid>"
+
+npm run dev
+```
+
+Frontend: `http://localhost:5173`
+
+## Call AI endpoints (PowerShell)
+All API calls require `X-Tenant-Id` (UUID). These examples work in local dev even if `CSRF_ENABLED=true`.
+
+```powershell
+$tenantId = "<paste-tenant-uuid>"
+
+Invoke-RestMethod -Method Post "http://localhost:8000/api/v1/ai/forecast" `
+  -Headers @{ "X-Tenant-Id" = $tenantId } `
+  -ContentType "application/json" `
+  -Body (@{ horizon_days = 30; data = @() } | ConvertTo-Json -Depth 10)
+
+Invoke-RestMethod -Method Post "http://localhost:8000/api/v1/ai/anomaly" `
+  -Headers @{ "X-Tenant-Id" = $tenantId } `
+  -ContentType "application/json" `
+  -Body (@{ data = @() } | ConvertTo-Json -Depth 10)
+```
+
+## Call AI endpoints (curl)
+```bash
+tenantId="<paste-tenant-uuid>"
+
+curl -sS -X POST "http://localhost:8000/api/v1/ai/forecast" \
+  -H "X-Tenant-Id: $tenantId" \
+  -H "Content-Type: application/json" \
+  -d '{"horizon_days":30,"data":[]}'
+```
+
+## Export revenue series (PowerShell)
+```powershell
+$tenantId = "<paste-tenant-uuid>"
+
+Invoke-RestMethod -Method Get "http://localhost:8000/api/v1/ml/exports/revenue_series?granularity=month&limit=1000" `
+  -Headers @{ "X-Tenant-Id" = $tenantId }
+```
+
+## Export revenue series (curl)
+```bash
+tenantId="<paste-tenant-uuid>"
+curl -sS "http://localhost:8000/api/v1/ml/exports/revenue_series?granularity=month&limit=1000" \
+  -H "X-Tenant-Id: $tenantId"
+```
+
+## Ingest ML prediction (PowerShell)
+In local dev, `POST /api/v1/ml/predictions/ingest` and `POST /api/v1/ml/snapshots` are CSRF-exempt so an external ML runner can ingest without managing CSRF tokens.
+
+```powershell
+$tenantId = "<paste-tenant-uuid>"
+
+$snapshotId = (Invoke-RestMethod -Method Post "http://localhost:8000/api/v1/ml/snapshots" `
+  -Headers @{ "X-Tenant-Id" = $tenantId } `
+  -ContentType "application/json" `
+  -Body (@{
+    from_date = "2025-01-01"
+    to_date = "2025-01-31"
+    granularity = "day"
+    filters = @{}
+    rows_count = 0
+    content_hash = "sha256:local"
+  } | ConvertTo-Json -Depth 10)).snapshot_id
+
+Invoke-RestMethod -Method Post "http://localhost:8000/api/v1/ml/predictions/ingest" `
+  -Headers @{ "X-Tenant-Id" = $tenantId } `
+  -ContentType "application/json" `
+  -Body (@{
+    prediction_type = "forecast"
+    horizon = 30
+    granularity = "day"
+    from_date = "2025-01-01"
+    to_date = "2025-01-31"
+    series = @{ labels = @("2025-01-01"); values = @(123.45) }
+    model_version = "1.0.0"
+    data_snapshot_id = $snapshotId
+    metrics = @{}
+    params = @{}
+    trigger = "local"
+  } | ConvertTo-Json -Depth 10)
+```
+
+## Ingest ML prediction (curl)
+```bash
+tenantId="<paste-tenant-uuid>"
+snapshotId="<paste-snapshot-uuid>"
+
+curl -sS -X POST "http://localhost:8000/api/v1/ml/predictions/ingest" \
+  -H "X-Tenant-Id: $tenantId" \
+  -H "Content-Type: application/json" \
+  -d "{\"prediction_type\":\"forecast\",\"horizon\":30,\"granularity\":\"day\",\"from_date\":\"2025-01-01\",\"to_date\":\"2025-01-31\",\"series\":{\"labels\":[\"2025-01-01\"],\"values\":[123.45]},\"model_version\":\"1.0.0\",\"data_snapshot_id\":\"$snapshotId\",\"metrics\":{},\"params\":{},\"trigger\":\"local\"}"
+```
+
+## Get latest prediction (PowerShell)
+```powershell
+$tenantId = "<paste-tenant-uuid>"
+Invoke-RestMethod -Method Get "http://localhost:8000/api/v1/ml/predictions/latest?prediction_type=forecast" `
+  -Headers @{ "X-Tenant-Id" = $tenantId }
+```
+
+## Get latest prediction (curl)
+```bash
+tenantId="<paste-tenant-uuid>"
+curl -sS "http://localhost:8000/api/v1/ml/predictions/latest?prediction_type=forecast" \
+  -H "X-Tenant-Id: $tenantId"
+```

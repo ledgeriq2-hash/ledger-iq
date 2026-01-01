@@ -1,17 +1,30 @@
-PYTHON ?= python
+DOCKER_COMPOSE ?= docker compose
 
-.PHONY: init-db migrate seed-db
+.PHONY: up down logs restart ps migrate test-backend test-frontend clean
 
-init-db:  ## Run migrations and seed default roles/chart of accounts
-	cd backend && $(PYTHON) -m alembic upgrade head
-	cd backend && $(PYTHON) -m app.initial_data
+up:
+	$(DOCKER_COMPOSE) up -d --build
 
-migrate:  ## Create a new alembic revision with message m="description"
-	cd backend && $(PYTHON) -m alembic revision --autogenerate -m "$(m)"
+down:
+	$(DOCKER_COMPOSE) down
 
-seed-db:  ## Seed default roles and chart of accounts without running migrations
-	cd backend && $(PYTHON) -m app.initial_data
+logs:
+	$(DOCKER_COMPOSE) logs -f --tail=200
 
-.PHONY: create-demo-tenant
-create-demo-tenant:  ## Create a demo tenant with sample data
-	cd backend && $(PYTHON) -m app.management.demo_data
+restart:
+	$(DOCKER_COMPOSE) restart
+
+ps:
+	$(DOCKER_COMPOSE) ps
+
+migrate:
+	$(DOCKER_COMPOSE) exec backend alembic upgrade head
+
+test-backend:
+	$(DOCKER_COMPOSE) exec backend pytest -q
+
+test-frontend:
+	@echo "Frontend does not define npm test; run npm run test:e2e inside frontend if needed"
+
+clean:
+	$(DOCKER_COMPOSE) down -v
