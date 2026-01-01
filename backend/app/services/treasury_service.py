@@ -12,6 +12,7 @@ from app.accounting.dto import RecordFinancialTransactionInput, TreasuryMovement
 from app.accounting.use_cases.record_financial_transaction import record_financial_transaction
 from app.core.exceptions import AppException
 from app.models.customer import Customer, CustomerStatus
+from app.services import supplier_service
 from app.models.treasury_transaction import TreasuryTransaction
 from app.services import audit_log_service
 from app.services.accounting_mapping import ACCOUNT_MAPPING_REQUIREMENTS, validate_tenant_account_mapping
@@ -51,18 +52,20 @@ async def _assert_party_active(
     if not party_type or not party_id:
         return
     normalized = party_type.strip().lower()
-    if normalized not in {"client", "customer"}:
+    if normalized in {"client", "customer"}:
+        result = await session.execute(
+            select(Customer).where(Customer.id == party_id, Customer.tenant_id == tenant_id)
+        )
+        customer = result.scalar_one_or_none()
+        if not customer:
+            raise AppException(code="customer_not_found", message="Customer not found", http_status=404)
+        if customer.status == CustomerStatus.DELETED:
+            raise AppException(code="party_deleted", message="Customer is deleted", http_status=409)
+        if customer.status == CustomerStatus.INACTIVE:
+            raise AppException(code="party_inactive", message="Customer is inactive", http_status=409)
         return
-    result = await session.execute(
-        select(Customer).where(Customer.id == party_id, Customer.tenant_id == tenant_id)
-    )
-    customer = result.scalar_one_or_none()
-    if not customer:
-        raise AppException(code="customer_not_found", message="Customer not found", http_status=404)
-    if customer.status == CustomerStatus.DELETED:
-        raise AppException(code="party_deleted", message="Customer is deleted", http_status=409)
-    if customer.status == CustomerStatus.INACTIVE:
-        raise AppException(code="party_inactive", message="Customer is inactive", http_status=409)
+    if normalized == "supplier":
+        await supplier_service.validate_can_receive_movements(session, tenant_id, party_id)
 
 
 async def _post_treasury_movement(

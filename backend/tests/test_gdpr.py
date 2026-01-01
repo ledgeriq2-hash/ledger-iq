@@ -110,6 +110,7 @@ async def test_gdpr_delete_with_retention_anonymizes(tmp_path, monkeypatch):
             tenant_id=tenant.id,
         )
         supplier = Supplier(
+            code="GDPR-SUP",
             name="PII Supplier",
             email="supplier@example.com",
             phone="555-5678",

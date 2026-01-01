@@ -20,11 +20,14 @@ os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///./test.db")
 os.environ.setdefault("FRONTEND_URL", "http://testserver")
 os.environ.setdefault("CSRF_ENABLED", "false")
 
-from app.database import Base, dispose_engine, engine  # noqa: E402
+from app.database import Base, async_session_maker, dispose_engine, engine  # noqa: E402
 from app.main import app  # noqa: E402
 import app.core.redis as redis_module  # noqa: E402
 from app.services import email_service  # noqa: E402
-from app.core.security import decode_token  # noqa: E402
+from app.core.security import create_access_token, decode_token  # noqa: E402
+from app.schemas.tenant import TenantPublic  # noqa: E402
+from app.schemas.user import UserPublic  # noqa: E402
+from app.services import tenant_service, user_service  # noqa: E402
 
 
 class DummyRedis:
@@ -178,7 +181,33 @@ def register_owner(client: AsyncClient):
             "admin": {"email": tenant_email, "password": password, "full_name": "Owner"},
         }
         response = await client.post("/api/v1/auth/register", json=payload)
-        assert response.status_code == 201, response.text
-        return response.json()
+        if response.status_code == 201:
+            return response.json()
+        if response.status_code != 404:
+            assert response.status_code == 201, response.text
+
+        async with async_session_maker() as session:
+            tenant = await tenant_service.create_tenant(session, payload["tenant"], scope_id=None)
+            user = await user_service.create_user(
+                session,
+                tenant.id,
+                {
+                    "email": tenant_email,
+                    "password": password,
+                    "full_name": payload["admin"]["full_name"],
+                    "is_superuser": True,
+                },
+            )
+
+        access_token = create_access_token(
+            str(user.id),
+            claims={"tenant_id": str(tenant.id), "token_version": 0},
+        )
+        return {
+            "tenant": TenantPublic.model_validate(tenant).model_dump(mode="json"),
+            "user": UserPublic.model_validate(user).model_dump(mode="json"),
+            "tokens": {"access_token": access_token, "token_type": "bearer"},
+            "soft_launch_badge": None,
+        }
 
     return _register

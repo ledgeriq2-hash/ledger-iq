@@ -135,7 +135,12 @@ async def test_invoice_payment_expense_journals_use_mapping(client: AsyncClient,
 
     supplier_res = await client.post(
         "/api/v1/suppliers/",
-        json={"name": "Vendor", "email": "vendor@example.com", "phone": "555-1234"},
+        json={
+            "code": "VENDOR-001",
+            "name": "Vendor",
+            "email": "vendor@example.com",
+            "phone": "555-1234",
+        },
         headers=auth_headers(token),
     )
     assert supplier_res.status_code == 201, supplier_res.text
@@ -256,7 +261,12 @@ async def test_missing_mapping_blocks_payment_and_expense(client: AsyncClient, r
 
     supplier_res = await client.post(
         "/api/v1/suppliers/",
-        json={"name": "Vendor", "email": "vendor@example.com", "phone": "555-1234"},
+        json={
+            "code": "VENDOR-002",
+            "name": "Vendor",
+            "email": "vendor@example.com",
+            "phone": "555-1234",
+        },
         headers=auth_headers(token),
     )
     assert supplier_res.status_code == 201, supplier_res.text

@@ -110,7 +110,12 @@ async def test_supplier_portal_routes(client: AsyncClient, register_owner):
 
     supplier_res = await client.post(
         "/api/v1/suppliers/",
-        json={"name": "Portal Vendor", "email": "vendor@example.com", "phone": "555-0001"},
+        json={
+            "code": "PORTAL-SUP",
+            "name": "Portal Vendor",
+            "email": "vendor@example.com",
+            "phone": "555-0001",
+        },
         headers=auth_headers(token),
     )
     assert supplier_res.status_code == 201, supplier_res.text

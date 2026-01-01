@@ -27,6 +27,7 @@ from app.services import (
     product_service,
     portal_service,
     role_service,
+    supplier_service,
     tenant_service,
     user_service,
 )
@@ -91,8 +92,8 @@ async def _ensure_customers(session, tenant):
 
 async def _ensure_suppliers(session, tenant):
     suppliers_payload = [
-        {"name": "Northwind Traders", "email": "northwind@example.com"},
-        {"name": "Acme Supplies", "email": "supplies@acme.com"},
+        {"code": "NORTHWIND", "name": "Northwind Traders", "email": "northwind@example.com"},
+        {"code": "ACME-SUP", "name": "Acme Supplies", "email": "supplies@acme.com"},
     ]
     created = []
     for payload in suppliers_payload:
@@ -101,9 +102,7 @@ async def _ensure_suppliers(session, tenant):
         )
         supplier = existing.scalar_one_or_none()
         if not supplier:
-            supplier = Supplier(**payload, tenant_id=tenant.id)
-            session.add(supplier)
-            await session.flush()
+            supplier = await supplier_service.create_supplier(session, tenant.id, payload)
         created.append(supplier)
     return created
 
