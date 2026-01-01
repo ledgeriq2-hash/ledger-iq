@@ -313,6 +313,10 @@
             "default": "0",
             "title": "Balance"
           },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
           "email": {
             "anyOf": [
               {
@@ -323,11 +327,6 @@
               }
             ],
             "title": "Email"
-          },
-          "is_deleted": {
-            "default": false,
-            "title": "Is Deleted",
-            "type": "boolean"
           },
           "name": {
             "title": "Name",
@@ -357,9 +356,46 @@
           }
         },
         "required": [
+          "code",
           "name"
         ],
         "title": "EmployeeCreate",
+        "type": "object"
+      },
+      "EmployeeListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/EmployeePublic"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "page": {
+            "title": "Page",
+            "type": "integer"
+          },
+          "page_size": {
+            "title": "Page Size",
+            "type": "integer"
+          },
+          "pages": {
+            "title": "Pages",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "page",
+          "page_size",
+          "total",
+          "pages"
+        ],
+        "title": "EmployeeListResponse",
         "type": "object"
       },
       "EmployeePublic": {
@@ -381,10 +417,38 @@
             "title": "Balance",
             "type": "string"
           },
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
             "type": "string"
+          },
+          "deactivated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deactivated At"
+          },
+          "deleted_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deleted At"
           },
           "email": {
             "anyOf": [
@@ -402,11 +466,6 @@
             "title": "Id",
             "type": "string"
           },
-          "is_deleted": {
-            "default": false,
-            "title": "Is Deleted",
-            "type": "boolean"
-          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -421,6 +480,10 @@
               }
             ],
             "title": "Phone"
+          },
+          "status": {
+            "$ref": "#/components/schemas/EmployeeStatus",
+            "default": "ACTIVE"
           },
           "tax_id": {
             "anyOf": [
@@ -452,6 +515,7 @@
           }
         },
         "required": [
+          "code",
           "name",
           "id",
           "created_at",
@@ -459,6 +523,25 @@
         ],
         "title": "EmployeePublic",
         "type": "object"
+      },
+      "EmployeeStatus": {
+        "enum": [
+          "ACTIVE",
+          "INACTIVE",
+          "DELETED"
+        ],
+        "title": "EmployeeStatus",
+        "type": "string"
+      },
+      "EmployeeStatusFilter": {
+        "enum": [
+          "ACTIVE",
+          "INACTIVE",
+          "DELETED",
+          "ALL"
+        ],
+        "title": "EmployeeStatusFilter",
+        "type": "string"
       },
       "EmployeeUpdate": {
         "properties": {
@@ -498,17 +581,6 @@
               }
             ],
             "title": "Email"
-          },
-          "is_deleted": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Is Deleted"
           },
           "name": {
             "anyOf": [
@@ -1026,42 +1098,6 @@
           "pages"
         ],
         "title": "PaginatedResponse[CustomerPublic]",
-        "type": "object"
-      },
-      "PaginatedResponse_EmployeePublic_": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/EmployeePublic"
-            },
-            "title": "Items",
-            "type": "array"
-          },
-          "page": {
-            "title": "Page",
-            "type": "integer"
-          },
-          "page_size": {
-            "title": "Page Size",
-            "type": "integer"
-          },
-          "pages": {
-            "title": "Pages",
-            "type": "integer"
-          },
-          "total": {
-            "title": "Total",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "items",
-          "page",
-          "page_size",
-          "total",
-          "pages"
-        ],
-        "title": "PaginatedResponse[EmployeePublic]",
         "type": "object"
       },
       "PaginatedResponse_ProductPublic_": {
@@ -3325,6 +3361,83 @@
         "parameters": [
           {
             "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Search"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/EmployeeStatusFilter"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_deleted",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Include Deleted",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maximum": 100,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Limit"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "minimum": 0,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Offset"
+            }
+          },
+          {
+            "in": "query",
             "name": "page",
             "required": false,
             "schema": {
@@ -3377,7 +3490,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PaginatedResponse_EmployeePublic_"
+                  "$ref": "#/components/schemas/EmployeeListResponse"
                 }
               }
             },
@@ -3832,8 +3945,8 @@
           "employees"
         ]
       },
-      "put": {
-        "operationId": "put_api_v1_employees_employee_id",
+      "patch": {
+        "operationId": "patch_api_v1_employees_employee_id",
         "parameters": [
           {
             "in": "path",
@@ -3964,6 +4077,262 @@
           }
         },
         "summary": "Update Employee",
+        "tags": [
+          "employees"
+        ]
+      }
+    },
+    "/api/v1/employees/{employee_id}/deactivate": {
+      "post": {
+        "operationId": "post_api_v1_employees_employee_id_deactivate",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "employee_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Employee Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Tenant-Id",
+            "required": true,
+            "schema": {
+              "title": "X-Tenant-Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Actor-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Actor-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmployeePublic"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Deactivate Employee",
+        "tags": [
+          "employees"
+        ]
+      }
+    },
+    "/api/v1/employees/{employee_id}/reactivate": {
+      "post": {
+        "operationId": "post_api_v1_employees_employee_id_reactivate",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "employee_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Employee Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Tenant-Id",
+            "required": true,
+            "schema": {
+              "title": "X-Tenant-Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "X-Actor-Id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Actor-Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EmployeePublic"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Reactivate Employee",
         "tags": [
           "employees"
         ]

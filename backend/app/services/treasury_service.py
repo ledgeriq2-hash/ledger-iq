@@ -12,7 +12,7 @@ from app.accounting.dto import RecordFinancialTransactionInput, TreasuryMovement
 from app.accounting.use_cases.record_financial_transaction import record_financial_transaction
 from app.core.exceptions import AppException
 from app.models.customer import Customer, CustomerStatus
-from app.services import supplier_service
+from app.services import employee_service, supplier_service
 from app.models.treasury_transaction import TreasuryTransaction
 from app.services import audit_log_service
 from app.services.accounting_mapping import ACCOUNT_MAPPING_REQUIREMENTS, validate_tenant_account_mapping
@@ -66,6 +66,9 @@ async def _assert_party_active(
         return
     if normalized == "supplier":
         await supplier_service.validate_can_receive_movements(session, tenant_id, party_id)
+        return
+    if normalized in {"employee", "worker"}:
+        await employee_service.validate_can_receive_movements(session, tenant_id, party_id)
 
 
 async def _post_treasury_movement(

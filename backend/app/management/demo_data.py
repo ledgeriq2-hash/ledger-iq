@@ -109,8 +109,8 @@ async def _ensure_suppliers(session, tenant):
 
 async def _ensure_employees(session, tenant):
     employees_payload = [
-        {"name": "Alice Accounts", "email": "alice@demo.local"},
-        {"name": "Bob Ops", "email": "bob@demo.local"},
+        {"code": "EMP-ALICE", "name": "Alice Accounts", "email": "alice@demo.local"},
+        {"code": "EMP-BOB", "name": "Bob Ops", "email": "bob@demo.local"},
     ]
     created = []
     for payload in employees_payload:

@@ -8,7 +8,7 @@ from app.models.billing_plan import BillingPlan
 from app.models.cashflow_category import CashflowCategory
 from app.models.chart_of_account import ChartOfAccount
 from app.models.customer import Customer
-from app.models.employee import Employee
+from app.models.employee import Employee, EmployeeStatus
 from app.models.error_event import ErrorEvent
 from app.models.expense import Expense
 from app.models.feedback import Feedback
@@ -42,6 +42,7 @@ ALL_MODELS = [
     ChartOfAccount,
     Customer,
     Employee,
+    EmployeeStatus,
     ErrorEvent,
     Expense,
     Feedback,
@@ -77,6 +78,7 @@ __all__ = [
     "ChartOfAccount",
     "Customer",
     "Employee",
+    "EmployeeStatus",
     "ErrorEvent",
     "Expense",
     "Feedback",

@@ -119,6 +119,7 @@ async def test_gdpr_delete_with_retention_anonymizes(tmp_path, monkeypatch):
             tenant_id=tenant.id,
         )
         employee = Employee(
+            code="GDPR-EMP",
             name="PII Employee",
             email="employee@example.com",
             phone="555-9012",
