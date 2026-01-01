@@ -25,6 +25,7 @@ from app.api.v1.products import router as products_router
 from app.api.v1.roles import router as roles_router
 from app.api.v1.suppliers import router as suppliers_router
 from app.api.v1.tenants import router as tenants_router
+from app.api.v1.treasury import router as treasury_router
 
 _include(customers_router, prefix="/v1", tags=["customers"])
 _include(employees_router, prefix="/v1", tags=["employees"])
@@ -35,6 +36,7 @@ _include(products_router, prefix="/v1", tags=["products"])
 _include(roles_router, prefix="/v1", tags=["roles"])
 _include(suppliers_router, prefix="/v1", tags=["suppliers"])
 _include(tenants_router, prefix="/v1", tags=["tenants"])
+_include(treasury_router, prefix="/v1", tags=["treasury"])
 
 if settings.feature_optional_routes:
     from app.api.settings import router as settings_router
@@ -56,7 +58,6 @@ if settings.feature_optional_routes:
     from app.api.v1.portal import router as portal_router
     from app.api.v1.recurring_invoices import router as recurring_invoices_router
     from app.api.v1.reports import router as reports_router
-    from app.api.v1.treasury import router as treasury_router
     from app.api.v1.users import router as users_router
 
     _include(settings_router, prefix="", tags=["settings"])
@@ -69,7 +70,6 @@ if settings.feature_optional_routes:
     _include(payments_router, prefix="/v1", tags=["payments"])
     _include(expenses_router, prefix="/v1", tags=["expenses"])
     _include(journal_entries_router, prefix="/v1", tags=["journal_entries"])
-    _include(treasury_router, prefix="/v1", tags=["treasury"])
     _include(billing_router, prefix="/v1", tags=["billing"])
     _include(onboarding_router, prefix="/v1", tags=["onboarding"])
     _include(gdpr_router, prefix="/v1", tags=["gdpr"])

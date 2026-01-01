@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app.models.activity_log import ActivityLog
 from app.models.ai_log import AiLog
+from app.models.accounting_period_lock import AccountingPeriodLock
 from app.models.attachment import Attachment
 from app.models.audit_log import AuditLog
 from app.models.billing_plan import BillingPlan
@@ -30,11 +31,14 @@ from app.models.tenant import Tenant
 from app.models.tenant_config import TenantConfig
 from app.models.tenant_daily_usage import TenantDailyUsage
 from app.models.tenant_subscription import TenantSubscription
+from app.models.treasury import Treasury
+from app.models.treasury_transaction import TreasuryTransaction
 from app.models.user import User
 
 ALL_MODELS = [
     ActivityLog,
     AiLog,
+    AccountingPeriodLock,
     Attachment,
     AuditLog,
     BillingPlan,
@@ -64,6 +68,8 @@ ALL_MODELS = [
     TenantConfig,
     TenantDailyUsage,
     TenantSubscription,
+    Treasury,
+    TreasuryTransaction,
     User,
 ]
 
@@ -71,6 +77,7 @@ ALL_MODELS = [
 __all__ = [
     "ActivityLog",
     "AiLog",
+    "AccountingPeriodLock",
     "Attachment",
     "AuditLog",
     "BillingPlan",
@@ -100,6 +107,8 @@ __all__ = [
     "TenantConfig",
     "TenantDailyUsage",
     "TenantSubscription",
+    "Treasury",
+    "TreasuryTransaction",
     "User",
     "ALL_MODELS",
 ]
