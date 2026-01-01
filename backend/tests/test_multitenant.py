@@ -19,10 +19,18 @@ async def test_tenant_isolation(client: AsyncClient, register_owner):
     token_b = owner_b["tokens"]["access_token"]
 
     cust_a = (
-        await client.post("/api/v1/customers/", json={"name": "Cust A", "email": "a@example.com"}, headers=auth_headers(token_a))
+        await client.post(
+            "/api/v1/customers/",
+            json={"code": "CUST-A", "name": "Cust A", "email": "a@example.com"},
+            headers=auth_headers(token_a),
+        )
     ).json()
     cust_b = (
-        await client.post("/api/v1/customers/", json={"name": "Cust B", "email": "b@example.com"}, headers=auth_headers(token_b))
+        await client.post(
+            "/api/v1/customers/",
+            json={"code": "CUST-B", "name": "Cust B", "email": "b@example.com"},
+            headers=auth_headers(token_b),
+        )
     ).json()
 
     res1 = await client.get(f"/api/v1/customers/{cust_b['id']}", headers=auth_headers(token_a))

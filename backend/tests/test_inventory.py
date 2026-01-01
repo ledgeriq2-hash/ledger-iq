@@ -9,11 +9,20 @@ from sqlalchemy import select
 
 from app.database import async_session_maker
 from app.models.product import Product
-from app.models.stock_movement import MovementType, ReferenceType, StockMovement
+from app.initial_data import seed_tenant
+from app.models.stock_movement import ReferenceType, StockMovement
+from app.models.tenant import Tenant
 
 
 def auth_headers(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
+
+
+async def _ensure_seeded(tenant_id: str) -> None:
+    tenant_uuid = UUID(tenant_id)
+    async with async_session_maker() as session:
+        tenant = await session.get(Tenant, tenant_uuid)
+        await seed_tenant(session, tenant)
 
 
 @pytest.mark.anyio
@@ -55,7 +64,7 @@ async def test_movement_creation_and_negative_block(client: AsyncClient, registe
     )
     assert too_far.status_code == 400
     body = too_far.json()
-    assert body["error"]["code"] == "stock_negative"
+    assert body["code"] == "stock_negative"
 
     # Summary reflects remaining stock 3
     summary = await client.get("/api/v1/inventory/summary", headers=headers)
@@ -69,10 +78,11 @@ async def test_movement_creation_and_negative_block(client: AsyncClient, registe
 async def test_invoice_creates_out_movements(client: AsyncClient, register_owner):
     owner = await register_owner()
     headers = auth_headers(owner["tokens"]["access_token"])
+    await _ensure_seeded(owner["tenant"]["id"])
 
     cust_res = await client.post(
         "/api/v1/customers/",
-        json={"name": "Buyer", "email": "buyer@example.com"},
+        json={"code": "BUYER-001", "name": "Buyer", "email": "buyer@example.com"},
         headers=headers,
     )
     assert cust_res.status_code == 201, cust_res.text
@@ -99,6 +109,9 @@ async def test_invoice_creates_out_movements(client: AsyncClient, register_owner
         headers=headers,
     )
     assert inv_res.status_code == 201, inv_res.text
+
+    post_res = await client.post(f"/api/v1/invoices/{inv_res.json()['id']}/post", headers=headers)
+    assert post_res.status_code == 200, post_res.text
 
     async with async_session_maker() as session:
         stock_row = await session.execute(select(Product).where(Product.id == UUID(product["id"])))

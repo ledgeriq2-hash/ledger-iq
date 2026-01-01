@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.role import Role
+from app.utils.pagination import normalize_pagination
 
 
 def _to_dict(payload: Any, *, exclude_unset: bool = False) -> dict[str, Any]:
@@ -17,9 +19,24 @@ def _to_dict(payload: Any, *, exclude_unset: bool = False) -> dict[str, Any]:
     raise TypeError("payload must be a mapping or pydantic model")
 
 
-async def list_roles(session: AsyncSession, tenant_id: UUID | None) -> Sequence[Role]:
-    result = await session.execute(select(Role).where(Role.tenant_id == tenant_id))
-    return result.scalars().all()
+async def list_roles(
+    session: AsyncSession,
+    tenant_id: UUID | None,
+    page: int | None = None,
+    page_size: int | None = None,
+    include_total: bool = False,
+) -> Sequence[Role] | tuple[list[Role], int]:
+    base = select(Role).where(Role.tenant_id == tenant_id).order_by(Role.created_at.desc())
+    if page is None and page_size is None and not include_total:
+        result = await session.execute(base)
+        return result.scalars().all()
+    page, page_size, offset = normalize_pagination(page, page_size)
+    result = await session.execute(base.offset(offset).limit(page_size))
+    items = result.scalars().all()
+    if not include_total:
+        return items
+    total = await session.scalar(select(func.count()).select_from(Role).where(Role.tenant_id == tenant_id)) or 0
+    return items, total
 
 
 async def get_role(session: AsyncSession, tenant_id: UUID | None, role_id: UUID) -> Role | None:

@@ -21,4 +21,12 @@ class RolePublic(IDTimestampMixin, RoleBase):
     pass
 
 
-__all__ = ["RoleBase", "RoleCreate", "RoleUpdate", "RolePublic"]
+class RoleList(BaseSchema):
+    items: list[RolePublic]
+    page: int = 1
+    page_size: int = 25
+    total: int = 0
+    pages: int = 0
+
+
+__all__ = ["RoleBase", "RoleCreate", "RoleUpdate", "RolePublic", "RoleList"]

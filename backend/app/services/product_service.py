@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from typing import Any, Sequence
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.pagination import PaginationParams, paginate_query
 from app.models.product import Product
 
 
@@ -17,9 +18,11 @@ def _to_dict(payload: Any, *, exclude_unset: bool = False) -> dict[str, Any]:
     raise TypeError("payload must be a mapping or pydantic model")
 
 
-async def list_products(session: AsyncSession, tenant_id: UUID) -> Sequence[Product]:
-    result = await session.execute(select(Product).where(Product.tenant_id == tenant_id))
-    return result.scalars().all()
+async def list_products(
+    session: AsyncSession, tenant_id: UUID, params: PaginationParams
+) -> tuple[list[Product], int]:
+    statement = select(Product).where(Product.tenant_id == tenant_id)
+    return await paginate_query(session, statement, params)
 
 
 async def get_product(session: AsyncSession, tenant_id: UUID, product_id: UUID) -> Product | None:

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-from typing import Any, Sequence, Tuple
+from collections.abc import Sequence
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.pagination import PaginationParams, paginate_query
 from app.models.expense import Expense
 from app.models.supplier import Supplier
 
@@ -18,9 +20,11 @@ def _to_dict(payload: Any, *, exclude_unset: bool = False) -> dict[str, Any]:
     raise TypeError("payload must be a mapping or pydantic model")
 
 
-async def list_suppliers(session: AsyncSession, tenant_id: UUID) -> Sequence[Supplier]:
-    result = await session.execute(select(Supplier).where(Supplier.tenant_id == tenant_id))
-    return result.scalars().all()
+async def list_suppliers(
+    session: AsyncSession, tenant_id: UUID, params: PaginationParams
+) -> tuple[list[Supplier], int]:
+    statement = select(Supplier).where(Supplier.tenant_id == tenant_id).order_by(Supplier.created_at.desc())
+    return await paginate_query(session, statement, params)
 
 
 async def get_supplier(session: AsyncSession, tenant_id: UUID, supplier_id: UUID) -> Supplier | None:
@@ -65,7 +69,7 @@ async def delete_supplier(session: AsyncSession, tenant_id: UUID, supplier_id: U
 
 async def get_supplier_with_expenses(
     session: AsyncSession, tenant_id: UUID, supplier_id: UUID
-) -> Tuple[Supplier | None, Sequence[Expense]]:
+) -> tuple[Supplier | None, Sequence[Expense]]:
     supplier = await get_supplier(session, tenant_id, supplier_id)
     if not supplier or getattr(supplier, "is_deleted", False):
         return None, []

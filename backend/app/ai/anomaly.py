@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List
+from typing import Any
 
 from app.ai.datasets import load_revenue_series
 from app.ai.utils import iqr_bounds, rolling_z_scores
@@ -16,10 +16,12 @@ def _resolve_anomaly_config(payload: Any, threshold: float, method: str, window:
     return threshold, method, max(3, window)
 
 
-def _detect_with_zscores(series: list[float], threshold: float, window: int) -> tuple[list[dict[str, Any]], list[float]]:
+def _detect_with_zscores(
+    series: list[float], threshold: float, window: int
+) -> tuple[list[dict[str, Any]], list[float]]:
     scores = rolling_z_scores(series, window=window)
     anomalies = []
-    for idx, (value, score) in enumerate(zip(series, scores)):
+    for idx, (value, score) in enumerate(zip(series, scores, strict=True)):
         if abs(score) < threshold:
             continue
         anomalies.append(
@@ -110,7 +112,7 @@ def detect_anomalies(payload: Any, threshold: float = 2.5, method: str = "zscore
             "explanation": ("Spike detected" if score > 0 else "Drop detected")
             + f" (z={score:.2f}, threshold={threshold})",
         }
-        for idx, (value, score) in enumerate(zip(series, scores))
+        for idx, (value, score) in enumerate(zip(series, scores, strict=True))
         if abs(score) >= threshold
     ]
 
@@ -126,7 +128,7 @@ def detect_anomalies(payload: Any, threshold: float = 2.5, method: str = "zscore
     }
 
 
-def _build_narrative(anomalies: List[Dict[str, Any]], threshold: float, method: str) -> str:
+def _build_narrative(anomalies: list[dict[str, Any]], threshold: float, method: str) -> str:
     if not anomalies:
         if method == "iqr":
             return f"No anomalies detected outside IQR bounds (factor {threshold})."

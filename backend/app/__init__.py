@@ -1,5 +1,13 @@
 from __future__ import annotations
 
-from .config import get_settings, settings
+"""
+Ledger IQ backend package.
 
-__all__ = ["get_settings", "settings"]
+Do NOT import `settings` at import-time because it requires env vars and will
+raise ValidationError if they aren't loaded yet (e.g. when running scripts).
+Import settings lazily from `app.config` where needed.
+"""
+
+from .config import get_settings
+
+__all__ = ["get_settings"]

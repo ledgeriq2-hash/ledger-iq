@@ -17,7 +17,11 @@ async def test_bulk_invoices_performance(client: AsyncClient, register_owner):
     token = owner["tokens"]["access_token"]
 
     cust = (
-        await client.post("/api/v1/customers/", json={"name": "Perf Cust", "email": "perf@example.com"}, headers=auth_headers(token))
+        await client.post(
+            "/api/v1/customers/",
+            json={"code": "PERF-001", "name": "Perf Cust", "email": "perf@example.com"},
+            headers=auth_headers(token),
+        )
     ).json()
 
     for _ in range(30):

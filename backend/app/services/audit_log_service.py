@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from typing import Any
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +17,7 @@ async def record_audit_log(
     user_id: UUID | None = None,
     old_data: dict | None = None,
     new_data: dict | None = None,
+    commit: bool = True,
 ) -> AuditLog:
     log = AuditLog(
         tenant_id=tenant_id,
@@ -29,7 +29,9 @@ async def record_audit_log(
         new_data=new_data,
     )
     session.add(log)
-    await session.commit()
+    await session.flush()
+    if commit:
+        await session.commit()
     await session.refresh(log)
     return log
 

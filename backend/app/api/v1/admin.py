@@ -15,17 +15,19 @@ from app.models.invoice import Invoice
 from app.models.payment import Payment
 from app.models.tenant import Tenant
 from app.models.user import User
-from app.schemas.admin import TenantAdminSummary, TenantOverviewResponse
+from app.schemas.admin import TenantAdminList, TenantAdminSummary, TenantOverviewResponse
+from app.schemas.billing import BillingStatus
 from app.schemas.error_event import ErrorEventsResponse
 from app.schemas.feedback import FeedbackListResponse
 from app.schemas.usage import TenantUsageResponse
 from app.services import (
+    billing_service,
     error_event_service,
     feedback_service,
-    billing_service,
     tenant_config_service,
     usage_service,
 )
+from app.utils.pagination import normalize_pagination, total_pages
 
 router = APIRouter(prefix="/admin")
 logger = logging.getLogger(__name__)
@@ -57,12 +59,18 @@ async def _get_owner_email(session: AsyncSession, tenant_id: UUID) -> str | None
     return row[0] if row else None
 
 
-@router.get("/tenants/", response_model=list[TenantAdminSummary])
+@router.get("/tenants/", response_model=TenantAdminList)
 async def list_tenants(
     session: AsyncSession = Depends(deps.get_db),
     __: User = Depends(require_roles([OWNER, ADMIN])),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
 ):
-    result = await session.execute(select(Tenant).order_by(Tenant.created_at.desc()))
+    page, page_size, offset = normalize_pagination(page, page_size)
+    total = await session.scalar(select(func.count()).select_from(Tenant)) or 0
+    result = await session.execute(
+        select(Tenant).order_by(Tenant.created_at.desc()).offset(offset).limit(page_size)
+    )
     tenants = result.scalars().all()
     summaries: list[TenantAdminSummary] = []
     for tenant in tenants:
@@ -80,13 +88,15 @@ async def list_tenants(
                 subscription_status=getattr(billing.get("subscription"), "status", None),
             )
         )
-    return summaries
+    pages = total_pages(total, page_size)
+    return TenantAdminList(items=summaries, page=page, page_size=page_size, total=total, pages=pages)
 
 
 @router.post("/tenants/{tenant_id}/soft-launch/enable")
 async def enable_soft_launch(
     tenant_id: UUID,
     session: AsyncSession = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
     __: User = Depends(require_roles([OWNER, ADMIN])),
 ):
     tenant = await _get_tenant(session, tenant_id)
@@ -103,6 +113,7 @@ async def enable_soft_launch(
 async def disable_soft_launch(
     tenant_id: UUID,
     session: AsyncSession = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
     __: User = Depends(require_roles([OWNER, ADMIN])),
 ):
     tenant = await _get_tenant(session, tenant_id)
@@ -149,6 +160,7 @@ async def tenant_overview(
         subscription_status=getattr(billing_info.get("subscription"), "status", None),
     )
     totals = {"invoices": invoice_count or 0, "payments": payment_count or 0}
+    billing_payload = BillingStatus(**billing_info).model_dump()
     return {
         "tenant": tenant_summary,
         "usage": usage,
@@ -156,13 +168,7 @@ async def tenant_overview(
         "feedback": feedback,
         "totals": totals,
         "last_login_at": last_login,
-        "billing": {
-            "plan": billing_info.get("plan"),
-            "plan_code": billing_info.get("plan_code"),
-            "subscription": billing_info.get("subscription"),
-            "usage": billing_info.get("usage"),
-            "limits": billing_info.get("limits"),
-        },
+        "billing": billing_payload,
     }
 
 

@@ -38,4 +38,12 @@ class TenantPublic(IDTimestampMixin, TenantBase):
     pass
 
 
-__all__ = ["TenantBase", "TenantCreate", "TenantUpdate", "TenantPublic"]
+class TenantList(BaseSchema):
+    items: list[TenantPublic]
+    page: int = 1
+    page_size: int = 25
+    total: int = 0
+    pages: int = 0
+
+
+__all__ = ["TenantBase", "TenantCreate", "TenantUpdate", "TenantPublic", "TenantList"]

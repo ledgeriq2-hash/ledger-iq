@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from datetime import date
+from datetime import datetime
 from decimal import Decimal
-from typing import List
 from uuid import UUID
 
 from app.models.invoice import InvoiceStatus
@@ -15,7 +15,7 @@ class InvoiceItemBase(BaseSchema):
     quantity: Decimal
     unit_price: Decimal
     tax_rate: Decimal
-    line_total: Decimal
+    line_total: Decimal | None = None
 
 
 class InvoiceItemCreate(InvoiceItemBase):
@@ -46,7 +46,7 @@ class InvoiceBase(BaseSchema):
 
 
 class InvoiceCreate(InvoiceBase):
-    items: List[InvoiceItemCreate] | None = None
+    items: list[InvoiceItemCreate] | None = None
 
 
 class InvoiceUpdate(BaseSchema):
@@ -57,16 +57,27 @@ class InvoiceUpdate(BaseSchema):
     currency: str | None = None
     total_amount: Decimal | None = None
     notes: str | None = None
-    items: List[InvoiceItemUpdate] | None = None
+    items: list[InvoiceItemUpdate] | None = None
 
 
 class InvoicePublic(IDTimestampMixin, InvoiceBase):
     id: UUID
-    items: List[InvoiceItemPublic] | None = None
+    items: list[InvoiceItemPublic] | None = None
+
+
+class InvoicePostRequest(BaseSchema):
+    pass
+
+
+class InvoicePaymentCreate(BaseSchema):
+    amount: Decimal
+    method: str
+    reference: str | None = None
+    paid_at: datetime | None = None
 
 
 class InvoiceList(BaseSchema):
-    items: List[InvoicePublic]
+    items: list[InvoicePublic]
     page: int = 1
     page_size: int = 50
     total: int = 0
@@ -79,6 +90,8 @@ __all__ = [
     "InvoiceUpdate",
     "InvoicePublic",
     "InvoiceList",
+    "InvoicePostRequest",
+    "InvoicePaymentCreate",
     "InvoiceItemBase",
     "InvoiceItemCreate",
     "InvoiceItemUpdate",

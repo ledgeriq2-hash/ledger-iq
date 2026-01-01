@@ -1,18 +1,55 @@
 from __future__ import annotations
 
-import asyncio
+import os
 import logging
 from logging.config import fileConfig
 import importlib
 import pkgutil
+from pathlib import Path
+
+from dotenv import load_dotenv
 
 from alembic import context
+from sqlalchemy import engine_from_config, text
 from sqlalchemy import pool
-from sqlalchemy.ext.asyncio import AsyncEngine, async_engine_from_config
+from sqlalchemy.engine.url import make_url
 
-from app.config import get_settings
-from app.database import Base
-import app.models  # noqa: F401
+# IMPORTANT: load env BEFORE importing app.* (settings are evaluated at import time)
+def _load_local_env_files() -> None:
+    """
+    Load local `.env*` files for development convenience.
+
+    Production should rely on process environment variables only.
+    """
+    explicit_env = (os.getenv("ENVIRONMENT") or "").strip().lower()
+    if explicit_env in {"production", "prod"}:
+        return
+
+    repo_root = Path(__file__).resolve().parents[2]
+    backend_dir = Path(__file__).resolve().parents[1]
+
+    for candidate in (backend_dir / ".env", repo_root / ".env"):
+        if candidate.exists():
+            load_dotenv(candidate, override=False)
+
+    env = (os.getenv("ENVIRONMENT") or "").strip().lower()
+    if not env:
+        for candidate in (backend_dir / ".env.development", repo_root / ".env.development"):
+            if candidate.exists():
+                load_dotenv(candidate, override=False)
+        env = (os.getenv("ENVIRONMENT") or "").strip().lower()
+
+    if env and env not in {"production", "prod"}:
+        for candidate in (backend_dir / f".env.{env}", repo_root / f".env.{env}"):
+            if candidate.exists():
+                load_dotenv(candidate, override=False)
+
+
+_load_local_env_files()
+
+from app.config import get_settings  # noqa: E402
+from app.database import Base  # noqa: E402
+import app.models  # noqa: F401,E402
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -33,13 +70,36 @@ def _import_all_models() -> None:
         importlib.import_module(module_info.name)
 
 
+def _get_alembic_database_url() -> str:
+    """
+    Resolve a sync-safe database URL for migrations.
+
+    Prefer ALEMBIC_DATABASE_URL or DATABASE_URL_SYNC, otherwise derive a
+    psycopg-powered URL from the application DATABASE_URL (which may be asyncpg).
+    """
+    explicit = os.getenv("ALEMBIC_DATABASE_URL") or os.getenv("DATABASE_URL_SYNC")
+    if explicit:
+        return explicit
+
+    base_url = settings.database_url
+    if not base_url:
+        raise ValueError("DATABASE_URL is not configured; migrations cannot run.")
+
+    url = make_url(base_url)
+    if url.drivername.startswith("postgresql+asyncpg"):
+        url = url.set(drivername="postgresql+psycopg")
+    elif url.drivername == "postgresql+psycopg2":
+        url = url.set(drivername="postgresql+psycopg")
+    return str(url)
+
+
 _import_all_models()
 target_metadata = Base.metadata
 
 
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode."""
-    url = settings.database_url
+    url = _get_alembic_database_url()
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -55,27 +115,32 @@ def do_run_migrations(connection) -> None:
     context.configure(connection=connection, target_metadata=target_metadata)
 
     with context.begin_transaction():
+        try:
+            if connection.dialect.name == "postgresql":
+                connection.execute(text('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"'))
+        except Exception:
+            # Extension creation is best-effort (e.g. reduced permissions), migrations may still succeed.
+            pass
+
         context.run_migrations()
 
 
-async def run_migrations_online() -> None:
+def run_migrations_online() -> None:
     """Run migrations in 'online' mode."""
     configuration = config.get_section(config.config_ini_section, {})
-    configuration["sqlalchemy.url"] = settings.database_url
+    configuration["sqlalchemy.url"] = _get_alembic_database_url()
 
-    connectable: AsyncEngine = async_engine_from_config(
+    connectable = engine_from_config(
         configuration,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
 
-    async with connectable.connect() as connection:
-        await connection.run_sync(do_run_migrations)
-
-    await connectable.dispose()
+    with connectable.connect() as connection:
+        do_run_migrations(connection)
 
 
 if context.is_offline_mode():
     run_migrations_offline()
 else:
-    asyncio.run(run_migrations_online())
+    run_migrations_online()

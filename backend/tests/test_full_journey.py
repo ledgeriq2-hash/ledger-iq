@@ -33,7 +33,12 @@ async def test_full_user_journey(client: AsyncClient, register_owner):
     assert health.status_code == 200
 
     # Create customer
-    cust_payload = {"name": "Journey Customer", "email": "journey@example.com", "phone": "555-0100"}
+    cust_payload = {
+        "code": "JOURNEY-001",
+        "name": "Journey Customer",
+        "email": "journey@example.com",
+        "phone": "555-0100",
+    }
     cust_res = await client.post("/api/v1/customers/", json=cust_payload, headers=auth_headers(token))
     assert cust_res.status_code == 201, cust_res.text
     customer = cust_res.json()

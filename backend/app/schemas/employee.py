@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import List
 from uuid import UUID
 
 from app.schemas.common import BaseSchema, IDTimestampMixin
@@ -35,8 +34,4 @@ class EmployeePublic(IDTimestampMixin, EmployeeBase):
     id: UUID
 
 
-class EmployeeList(BaseSchema):
-    items: List[EmployeePublic]
-
-
-__all__ = ["EmployeeBase", "EmployeeCreate", "EmployeeUpdate", "EmployeePublic", "EmployeeList"]
+__all__ = ["EmployeeBase", "EmployeeCreate", "EmployeeUpdate", "EmployeePublic"]

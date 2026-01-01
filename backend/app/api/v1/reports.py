@@ -14,6 +14,12 @@ from app.core.permissions import ACCOUNTANT, ADMIN, OWNER, VIEWER, require_roles
 from app.models.user import User
 from app.reports.pdf import export_pdf
 from app.schemas.report import ReportCacheList, ReportRequest, ReportResponse
+from app.accounting.use_cases.generate_client_statement import generate_client_statement
+from app.accounting.use_cases.generate_party_statement import (
+    generate_employee_statement,
+    generate_supplier_statement,
+)
+from app.treasury.use_cases.generate_treasury_report import generate_treasury_report
 from app.services import report_service
 
 router = APIRouter(
@@ -23,7 +29,7 @@ router = APIRouter(
 
 
 def _hash_params(report_type: str, params: dict | None) -> str:
-    payload = json.dumps({"report_type": report_type, "params": params or {}}, sort_keys=True, default=str)
+    payload = json.dumps({"report_type": report_type, "params": params or {}}, sort_keys=True, default=str, ensure_ascii=False)
     return hashlib.sha256(payload.encode()).hexdigest()
 
 
@@ -32,6 +38,15 @@ def _parse_date(value) -> date | None:
         return None
     try:
         return date.fromisoformat(str(value))
+    except Exception:
+        return None
+
+
+def _parse_uuid(value) -> UUID | None:
+    if value is None:
+        return None
+    try:
+        return UUID(str(value))
     except Exception:
         return None
 
@@ -113,6 +128,13 @@ async def run_report(
     from_date_param = _parse_date(params.get("from_date"))
     to_date_param = _parse_date(params.get("to_date"))
     as_of_param = _parse_date(params.get("as_of_date"))
+    client_id_param = _parse_uuid(params.get("client_id"))
+    treasury_id_param = _parse_uuid(params.get("treasury_id"))
+    supplier_id_param = _parse_uuid(params.get("supplier_id"))
+    employee_id_param = _parse_uuid(params.get("employee_id"))
+    reference_id_param = _parse_uuid(params.get("reference_id"))
+    direction_param = params.get("direction")
+    reference_type_param = params.get("reference_type")
 
     async def income_statement():
         return await report_service.get_income_statement(session, tenant_id, from_date_param, to_date_param)
@@ -126,6 +148,51 @@ async def run_report(
     async def trial_balance():
         return await report_service.get_trial_balance(session, tenant_id, as_of_param)
 
+    async def client_statement():
+        if not client_id_param:
+            return {"error": "client_id is required"}
+        return await generate_client_statement(
+            session,
+            tenant_id=tenant_id,
+            client_id=client_id_param,
+            from_date=from_date_param,
+            to_date=to_date_param,
+        )
+
+    async def treasury_report():
+        return await generate_treasury_report(
+            session,
+            tenant_id=tenant_id,
+            from_date=from_date_param,
+            to_date=to_date_param,
+            treasury_id=treasury_id_param,
+            direction=str(direction_param) if direction_param is not None else None,
+            reference_type=str(reference_type_param) if reference_type_param is not None else None,
+            reference_id=reference_id_param,
+        )
+
+    async def supplier_statement():
+        if not supplier_id_param:
+            return {"error": "supplier_id is required"}
+        return await generate_supplier_statement(
+            session,
+            tenant_id=tenant_id,
+            supplier_id=supplier_id_param,
+            from_date=from_date_param,
+            to_date=to_date_param,
+        )
+
+    async def employee_statement():
+        if not employee_id_param:
+            return {"error": "employee_id is required"}
+        return await generate_employee_statement(
+            session,
+            tenant_id=tenant_id,
+            employee_id=employee_id_param,
+            from_date=from_date_param,
+            to_date=to_date_param,
+        )
+
     def fallback():
         return {"report_type": report_type, "params": params}
 
@@ -137,10 +204,123 @@ async def run_report(
         generator = cashflow
     elif report_type == "trial_balance":
         generator = trial_balance
+    elif report_type == "client_statement":
+        generator = client_statement
+    elif report_type == "treasury_report":
+        generator = treasury_report
+    elif report_type == "supplier_statement":
+        generator = supplier_statement
+    elif report_type == "employee_statement":
+        generator = employee_statement
     else:
         generator = fallback
 
     return await _run_and_cache_report(session, tenant_id, report_type, params, generator)
+
+
+@router.get("/client-statement", response_model=ReportResponse)
+async def client_statement(
+    client_id: UUID,
+    from_date: date | None = None,
+    to_date: date | None = None,
+    session: AsyncSession = Depends(deps.get_db),
+    tenant_id: UUID = Depends(deps.get_current_tenant),
+    _: User = Depends(deps.get_current_active_user),
+):
+    params = {"client_id": client_id, "from_date": from_date, "to_date": to_date}
+
+    async def generator():
+        return await generate_client_statement(
+            session,
+            tenant_id=tenant_id,
+            client_id=client_id,
+            from_date=from_date,
+            to_date=to_date,
+        )
+
+    return await _run_and_cache_report(session, tenant_id, "client_statement", params, generator)
+
+
+@router.get("/supplier-statement", response_model=ReportResponse)
+async def supplier_statement(
+    supplier_id: UUID,
+    from_date: date | None = None,
+    to_date: date | None = None,
+    session: AsyncSession = Depends(deps.get_db),
+    tenant_id: UUID = Depends(deps.get_current_tenant),
+    _: User = Depends(deps.get_current_active_user),
+):
+    params = {"supplier_id": supplier_id, "from_date": from_date, "to_date": to_date}
+
+    async def generator():
+        return await generate_supplier_statement(
+            session,
+            tenant_id=tenant_id,
+            supplier_id=supplier_id,
+            from_date=from_date,
+            to_date=to_date,
+        )
+
+    return await _run_and_cache_report(session, tenant_id, "supplier_statement", params, generator)
+
+
+@router.get("/employee-statement", response_model=ReportResponse)
+async def employee_statement(
+    employee_id: UUID,
+    from_date: date | None = None,
+    to_date: date | None = None,
+    session: AsyncSession = Depends(deps.get_db),
+    tenant_id: UUID = Depends(deps.get_current_tenant),
+    _: User = Depends(deps.get_current_active_user),
+):
+    params = {"employee_id": employee_id, "from_date": from_date, "to_date": to_date}
+
+    async def generator():
+        return await generate_employee_statement(
+            session,
+            tenant_id=tenant_id,
+            employee_id=employee_id,
+            from_date=from_date,
+            to_date=to_date,
+        )
+
+    return await _run_and_cache_report(session, tenant_id, "employee_statement", params, generator)
+
+
+@router.get("/treasury", response_model=ReportResponse)
+async def treasury_report(
+    from_date: date | None = None,
+    to_date: date | None = None,
+    treasury_id: UUID | None = None,
+    direction: str | None = None,
+    reference_type: str | None = None,
+    reference_id: UUID | None = None,
+    session: AsyncSession = Depends(deps.get_db),
+    tenant_id: UUID = Depends(deps.get_current_tenant),
+    _: User = Depends(deps.get_current_active_user),
+):
+    params = {
+        "from_date": from_date,
+        "to_date": to_date,
+        "treasury_id": treasury_id,
+        "direction": direction,
+        "reference_type": reference_type,
+        "reference_id": reference_id,
+    }
+
+    async def generator():
+        return await generate_treasury_report(
+            session,
+            tenant_id=tenant_id,
+            from_date=from_date,
+            to_date=to_date,
+            treasury_id=treasury_id,
+            direction=direction,
+            reference_type=reference_type,
+            reference_id=reference_id,
+        )
+
+    return await _run_and_cache_report(session, tenant_id, "treasury_report", params, generator)
 
 
 @router.get("/income-statement", response_model=ReportResponse)

@@ -1,16 +1,17 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from decimal import Decimal
 from typing import Any, Sequence
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.exceptions import AppException
 from app.metrics import EXPENSES_CREATED
 from app.models.expense import Expense
-from app.services import journal_service, stock_movement_service
-from app.services.accounting_mapping import get_account_mapping
+from app.services import stock_movement_service, treasury_service
 
 
 def _to_dict(payload: Any, *, exclude_unset: bool = False) -> dict[str, Any]:
@@ -21,54 +22,55 @@ def _to_dict(payload: Any, *, exclude_unset: bool = False) -> dict[str, Any]:
     raise TypeError("payload must be a mapping or pydantic model")
 
 
-async def _load_expense_account_mapping(session: AsyncSession, tenant_id: UUID) -> dict[str, UUID | None]:
-    mapping = await get_account_mapping(session, tenant_id)
-    return {
-        "expense": mapping.get("expense_account_id"),
-        "cash": mapping.get("cash_account_id"),
-        "payables": mapping.get("payables_account_id"),
-    }
+@asynccontextmanager
+async def _transaction_scope(session: AsyncSession):
+    if session.in_transaction():
+        await session.rollback()
+    async with session.begin():
+        yield
 
 
-async def _post_expense_entry(session: AsyncSession, tenant_id: UUID, expense: Expense) -> None:
-    mapping = await _load_expense_account_mapping(session, tenant_id)
-    expense_account = mapping.get("expense")
-    cash_or_payable = mapping.get("payables") or mapping.get("cash")
-    if not expense_account or not cash_or_payable:
-        return
-
-    amount = Decimal(str(expense.amount or 0))
+async def _post_expense_entry(
+    session: AsyncSession,
+    tenant_id: UUID,
+    expense: Expense,
+    actor_id: UUID | None,
+    *,
+    commit: bool = False,
+) -> None:
+    amount = Decimal(str(expense.amount or 0)).quantize(Decimal("0.01"))
     if amount <= 0:
         return
 
-    expense_date = expense.expense_date
-    lines = [
-        {
-            "account_id": expense_account,
-            "debit": amount,
-            "credit": Decimal("0"),
-            "line_description": f"Expense {expense.id}",
-        },
-        {
-            "account_id": cash_or_payable,
-            "debit": Decimal("0"),
-            "credit": amount,
-            "line_description": f"Expense {expense.id} funding",
-        },
-    ]
-    await journal_service.create_journal_entry_with_lines(
-        session=session,
-        tenant_id=tenant_id,
-        date=expense_date,
-        description=f"Expense {expense.id} recognition",
-        reference=str(expense.id),
-        lines=lines,
+    await treasury_service.create_expense(
+        session,
+        tenant_id,
+        amount=amount,
+        supplier_id=expense.supplier_id,
+        reference_type="expense",
+        reference_id=expense.id,
+        description=expense.description or f"Expense {expense.id}",
+        entry_date=expense.expense_date,
+        actor_id=actor_id,
+        treasury_id=None,
+        commit=commit,
     )
 
 
-async def list_expenses(session: AsyncSession, tenant_id: UUID) -> Sequence[Expense]:
-    result = await session.execute(select(Expense).where(Expense.tenant_id == tenant_id))
-    return result.scalars().all()
+async def list_expenses(
+    session: AsyncSession, tenant_id: UUID, page: int = 1, page_size: int = 50
+) -> tuple[Sequence[Expense], int]:
+    if page <= 0:
+        page = 1
+    if page_size <= 0:
+        page_size = 50
+    base_query = select(Expense).where(Expense.tenant_id == tenant_id).order_by(Expense.created_at.desc())
+    total_result = await session.execute(
+        select(func.count()).select_from(select(Expense.id).where(Expense.tenant_id == tenant_id).subquery())
+    )
+    total = int(total_result.scalar_one() or 0)
+    result = await session.execute(base_query.offset((page - 1) * page_size).limit(page_size))
+    return result.scalars().all(), total
 
 
 async def get_expense(session: AsyncSession, tenant_id: UUID, expense_id: UUID) -> Expense | None:
@@ -78,33 +80,36 @@ async def get_expense(session: AsyncSession, tenant_id: UUID, expense_id: UUID) 
     return result.scalar_one_or_none()
 
 
-async def create_expense(session: AsyncSession, tenant_id: UUID, payload: Any) -> Expense:
+async def create_expense(
+    session: AsyncSession, tenant_id: UUID, payload: Any, *, actor_id: UUID | None = None
+) -> Expense:
     data = _to_dict(payload)
     product_id = data.pop("product_id", None)
     quantity = data.pop("quantity", None)
     expense = Expense(**data, tenant_id=tenant_id)
-    session.add(expense)
-    await session.commit()
+    async with _transaction_scope(session):
+        session.add(expense)
+        await session.flush()
+        try:
+            EXPENSES_CREATED.labels(tenant_id=str(tenant_id)).inc()
+        except Exception:
+            pass
+        if product_id and quantity:
+            await stock_movement_service.create_movement(
+                session,
+                tenant_id,
+                {
+                    "product_id": product_id,
+                    "quantity": quantity,
+                    "movement_type": stock_movement_service.MovementType.IN,
+                    "reference_type": stock_movement_service.ReferenceType.PURCHASE,
+                    "reference_id": expense.id,
+                },
+                commit=False,
+            )
+        # ledger entry keyed to the same transaction to ensure atomicity
+        await _post_expense_entry(session, tenant_id, expense, actor_id, commit=False)
     await session.refresh(expense)
-    try:
-        EXPENSES_CREATED.labels(tenant_id=str(tenant_id)).inc()
-    except Exception:
-        pass
-    if product_id and quantity:
-        await stock_movement_service.create_movement(
-            session,
-            tenant_id,
-            {
-                "product_id": product_id,
-                "quantity": quantity,
-                "movement_type": stock_movement_service.MovementType.IN,
-                "reference_type": stock_movement_service.ReferenceType.PURCHASE,
-                "reference_id": expense.id,
-            },
-            commit=False,
-        )
-        await session.commit()
-    await _post_expense_entry(session, tenant_id, expense)
     return expense
 
 
@@ -125,11 +130,8 @@ async def update_expense(
 
 
 async def delete_expense(session: AsyncSession, tenant_id: UUID, expense_id: UUID) -> bool:
-    result = await session.execute(
-        delete(Expense).where(Expense.id == expense_id, Expense.tenant_id == tenant_id)
-    )
-    await session.commit()
-    return result.rowcount > 0
+    _ = session, tenant_id, expense_id
+    raise AppException(code="deletes_disabled", message="Deleting expenses is disabled", http_status=405)
 
 
 __all__ = [

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
-from typing import List
 from uuid import UUID
 
 from app.schemas.common import BaseSchema, IDTimestampMixin
@@ -37,7 +36,11 @@ class ExpensePublic(IDTimestampMixin, ExpenseBase):
 
 
 class ExpenseList(BaseSchema):
-    items: List[ExpensePublic]
+    items: list[ExpensePublic]
+    page: int = 1
+    page_size: int = 50
+    total: int = 0
+    pages: int = 0
 
 
 __all__ = ["ExpenseBase", "ExpenseCreate", "ExpenseUpdate", "ExpensePublic", "ExpenseList"]

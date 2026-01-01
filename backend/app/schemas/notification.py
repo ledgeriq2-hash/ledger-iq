@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List
 from uuid import UUID
 
 from app.schemas.common import BaseSchema, IDTimestampMixin
@@ -34,7 +33,7 @@ class NotificationPublic(IDTimestampMixin, NotificationBase):
 
 
 class NotificationList(BaseSchema):
-    items: List[NotificationPublic]
+    items: list[NotificationPublic]
 
 
 __all__ = [

@@ -2,21 +2,22 @@ from __future__ import annotations
 
 import json
 from calendar import monthrange
-from datetime import date, datetime, timedelta, timezone
-from typing import Any, Sequence
+from collections.abc import Sequence
+from datetime import UTC, date, datetime, timedelta
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.recurring_invoice import RecurringInvoice
+from app.schemas.invoice import InvoiceCreate, InvoicePublic
 from app.schemas.recurring_invoice import (
     ALLOWED_FREQUENCIES,
     RecurringInvoiceCreate,
-    RecurringInvoiceUpdate,
     RecurringInvoicePublic,
+    RecurringInvoiceUpdate,
 )
-from app.schemas.invoice import InvoiceCreate, InvoicePublic
 from app.services import invoice_service
 
 
@@ -31,7 +32,7 @@ def _to_dict(payload: Any, *, exclude_unset: bool = False) -> dict[str, Any]:
 def _ensure_tz(dt: datetime | None) -> datetime | None:
     if dt is None:
         return None
-    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+    return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
 
 
 def _validate_frequency(value: str) -> str:
@@ -42,7 +43,7 @@ def _validate_frequency(value: str) -> str:
 
 
 def _next_run_from(base: datetime, frequency: str, interval: int = 1, day_of_month: int | None = None) -> datetime:
-    base = _ensure_tz(base) or datetime.now(timezone.utc)
+    base = _ensure_tz(base) or datetime.now(UTC)
     interval = max(1, interval or 1)
     freq = _validate_frequency(frequency)
     if freq == "daily":
@@ -65,7 +66,7 @@ def _next_run_from(base: datetime, frequency: str, interval: int = 1, day_of_mon
 def _serialize_template(template: InvoiceCreate | dict[str, Any]) -> str:
     if isinstance(template, InvoiceCreate):
         return template.model_dump_json()
-    return json.dumps(template, default=str)
+    return json.dumps(template, default=str, ensure_ascii=False)
 
 
 def _coerce_invoice_payload(template_json: str) -> InvoiceCreate:
@@ -143,10 +144,12 @@ async def create_recurring_invoice(
 
     # Align customer IDs
     customer_id = data.get("customer_id") or template_model.customer_id
+    if customer_id:
+        customer_id = UUID(str(customer_id))
     template_model.customer_id = customer_id
 
     if not next_run_at:
-        next_run_at = _next_run_from(datetime.now(timezone.utc), frequency, interval, day_of_month)
+        next_run_at = _next_run_from(datetime.now(UTC), frequency, interval, day_of_month)
 
     recurring = RecurringInvoice(
         customer_id=customer_id,
@@ -227,7 +230,8 @@ async def run_recurring_invoice(session: AsyncSession, tenant_id: UUID, recurrin
 
     invoice_payload = _hydrate_invoice_payload(recurring)
     invoice = await invoice_service.create_invoice(session, tenant_id, invoice_payload)
-    now = datetime.now(timezone.utc)
+    await session.refresh(recurring)
+    now = datetime.now(UTC)
     recurring.last_run_at = now
     recurring.next_run_at = _next_run_from(now, recurring.frequency, recurring.interval, recurring.day_of_month)
     await session.commit()
@@ -236,7 +240,7 @@ async def run_recurring_invoice(session: AsyncSession, tenant_id: UUID, recurrin
 
 
 async def process_due_recurring_invoices(session: AsyncSession, tenant_id: UUID | None = None, limit: int = 50) -> list[UUID]:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     query = select(RecurringInvoice).where(
         RecurringInvoice.next_run_at <= now,
     )
@@ -247,10 +251,12 @@ async def process_due_recurring_invoices(session: AsyncSession, tenant_id: UUID 
 
     generated: list[UUID] = []
     for recurring in due_items:
+        await session.refresh(recurring)
         invoice_payload = _hydrate_invoice_payload(recurring)
         invoice = await invoice_service.create_invoice(session, recurring.tenant_id, invoice_payload)
         generated.append(invoice.id)
-        now_ts = datetime.now(timezone.utc)
+        await session.refresh(recurring)
+        now_ts = datetime.now(UTC)
         recurring.last_run_at = now_ts
         recurring.next_run_at = _next_run_from(now_ts, recurring.frequency, recurring.interval, recurring.day_of_month)
     if due_items:

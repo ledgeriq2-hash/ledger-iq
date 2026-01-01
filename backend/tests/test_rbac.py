@@ -22,11 +22,23 @@ async def create_role(session, tenant_id, name: str):
     return await role_service.create_role(session, tenant_id, {"name": name})
 
 
-async def create_user_with_role(client: AsyncClient, tenant_slug: str, role_id: str, email: str, password: str, admin_token: str):
+async def create_user_with_role(
+    client: AsyncClient,
+    tenant_id: uuid.UUID,
+    tenant_slug: str,
+    role_id: str,
+    email: str,
+    password: str,
+    admin_token: str,
+):
     payload = {"email": email, "password": password, "full_name": email.split("@")[0], "role_id": role_id}
     res = await client.post("/api/v1/users/", json=payload, headers=auth_headers(admin_token))
     assert res.status_code == 201, res.text
-    login = await client.post("/api/v1/auth/login", json={"email": email, "password": password, "tenant": tenant_slug})
+    login = await client.post(
+        "/api/v1/auth/login",
+        json={"email": email, "password": password, "tenant": tenant_slug},
+        headers={"X-Tenant-Id": str(tenant_id)},
+    )
     assert login.status_code == 200, login.text
     return login.json()["tokens"]["access_token"]
 
@@ -53,20 +65,20 @@ async def test_rbac_matrix(client: AsyncClient, register_owner):
 
     tokens = {
         "ADMIN": await create_user_with_role(
-            client, tenant_slug, str(admin_role.id), "admin@example.com", "Pass123!", owner_token
+            client, tenant_id, tenant_slug, str(admin_role.id), "admin@example.com", "Pass123!", owner_token
         ),
         "ACCOUNTANT": await create_user_with_role(
-            client, tenant_slug, str(accountant_role.id), "acct@example.com", "Pass123!", owner_token
+            client, tenant_id, tenant_slug, str(accountant_role.id), "acct@example.com", "Pass123!", owner_token
         ),
         "VIEWER": await create_user_with_role(
-            client, tenant_slug, str(viewer_role.id), "viewer@example.com", "Pass123!", owner_token
+            client, tenant_id, tenant_slug, str(viewer_role.id), "viewer@example.com", "Pass123!", owner_token
         ),
     }
 
     # Create a base customer for invoice references
     cust_res = await client.post(
         "/api/v1/customers/",
-        json={"name": "RBAC Customer", "email": "rbac@example.com"},
+        json={"code": "RBAC-BASE", "name": "RBAC Customer", "email": "rbac@example.com"},
         headers=auth_headers(owner_token),
     )
     assert cust_res.status_code == 201, cust_res.text
@@ -83,9 +95,9 @@ async def test_rbac_matrix(client: AsyncClient, register_owner):
     }
 
     cases = [
-        ("ADMIN", "POST", "/api/v1/customers/", 201, {"name": "C-Admin", "email": "ca@example.com"}),
-        ("ACCOUNTANT", "POST", "/api/v1/customers/", 201, {"name": "C-Acct", "email": "cb@example.com"}),
-        ("VIEWER", "POST", "/api/v1/customers/", 201, {"name": "C-View", "email": "cv@example.com"}),  # current implementation allows
+        ("ADMIN", "POST", "/api/v1/customers/", 201, {"code": "C-ADMIN", "name": "C-Admin", "email": "ca@example.com"}),
+        ("ACCOUNTANT", "POST", "/api/v1/customers/", 201, {"code": "C-ACCT", "name": "C-Acct", "email": "cb@example.com"}),
+        ("VIEWER", "POST", "/api/v1/customers/", 403, {"code": "C-VIEW", "name": "C-View", "email": "cv@example.com"}),
         ("VIEWER", "GET", "/api/v1/customers/", 200, None),
         ("ACCOUNTANT", "POST", "/api/v1/invoices/", 201, invoice_payload),
         ("VIEWER", "POST", "/api/v1/invoices/", 403, invoice_payload),

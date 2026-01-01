@@ -8,7 +8,7 @@ class TenantSettingsError(RuntimeError):
     """Raised when tenant settings are missing required configuration."""
 
 
-_DEFAULT_COA_MAPPING = {
+_DEFAULT_COA_MAPPING: dict[str, Any] = {
     "accounts_receivable_account_id": None,
     "revenue_account_id": None,
     "expense_account_id": None,

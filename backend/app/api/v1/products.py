@@ -6,21 +6,23 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import deps
+from app.core.pagination import PaginatedResponse, PaginationParams, pagination_params
 from app.models.user import User
-from app.schemas.product import ProductCreate, ProductList, ProductPublic, ProductUpdate
+from app.schemas.product import ProductCreate, ProductPublic, ProductUpdate
 from app.services import product_service
 
 router = APIRouter(prefix="/products")
 
 
-@router.get("/", response_model=ProductList)
+@router.get("/", response_model=PaginatedResponse[ProductPublic])
 async def list_products(
     session: AsyncSession = Depends(deps.get_db),
     tenant_id: UUID = Depends(deps.get_current_tenant),
     _: User = Depends(deps.get_current_active_user),
+    pagination: PaginationParams = Depends(pagination_params),
 ):
-    products = await product_service.list_products(session, tenant_id)
-    return ProductList(items=products)
+    products, total = await product_service.list_products(session, tenant_id, pagination)
+    return PaginatedResponse[ProductPublic].from_results(items=products, total=total, params=pagination)
 
 
 @router.get("/{product_id}", response_model=ProductPublic)

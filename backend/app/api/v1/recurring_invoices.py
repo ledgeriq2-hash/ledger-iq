@@ -7,13 +7,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import deps
 from app.models.user import User
+from app.schemas.invoice import InvoicePublic
 from app.schemas.recurring_invoice import (
     RecurringInvoiceCreate,
     RecurringInvoiceList,
     RecurringInvoicePublic,
     RecurringInvoiceUpdate,
 )
-from app.schemas.invoice import InvoicePublic
 from app.services import recurring_invoice_service
 
 router = APIRouter(prefix="/recurring-invoices")

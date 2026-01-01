@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from typing import Any, Sequence
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.pagination import PaginationParams, paginate_query
 from app.models.employee import Employee
 
 
@@ -17,9 +18,11 @@ def _to_dict(payload: Any, *, exclude_unset: bool = False) -> dict[str, Any]:
     raise TypeError("payload must be a mapping or pydantic model")
 
 
-async def list_employees(session: AsyncSession, tenant_id: UUID) -> Sequence[Employee]:
-    result = await session.execute(select(Employee).where(Employee.tenant_id == tenant_id))
-    return result.scalars().all()
+async def list_employees(
+    session: AsyncSession, tenant_id: UUID, params: PaginationParams
+) -> tuple[list[Employee], int]:
+    statement = select(Employee).where(Employee.tenant_id == tenant_id)
+    return await paginate_query(session, statement, params)
 
 
 async def get_employee(session: AsyncSession, tenant_id: UUID, employee_id: UUID) -> Employee | None:

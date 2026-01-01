@@ -29,6 +29,10 @@ class JournalEntryLine(BaseModel):
     credit: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False, server_default=text("0"))
     currency_amount: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
     line_description: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    entity_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    entity_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    reference_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    reference_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
 
     journal_entry: Mapped[JournalEntry] = relationship("JournalEntry", back_populates="lines", lazy="joined")
     account: Mapped[ChartOfAccount] = relationship("ChartOfAccount", lazy="joined")
@@ -36,8 +40,10 @@ class JournalEntryLine(BaseModel):
     __table_args__ = (
         Index("ix_journal_entry_lines_tenant_id", "tenant_id"),
         Index("ix_journal_entry_lines_created_at", "created_at"),
+        Index("ix_journal_entry_lines_tenant_created_at", "tenant_id", "created_at"),
         Index("ix_journal_entry_lines_journal_entry_id", "journal_entry_id"),
         Index("ix_journal_entry_lines_account_id", "account_id"),
+        Index("ix_journal_entry_lines_reference", "reference_type", "reference_id"),
     )
 
 

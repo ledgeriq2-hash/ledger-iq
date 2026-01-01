@@ -1,22 +1,145 @@
-from __future__ import annotations
+﻿from __future__ import annotations
+
+import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+
+def _load_local_env_files() -> None:
+    """
+    Load local `.env*` files for development convenience.
+
+    Production should rely on process environment variables only.
+    """
+    explicit_env = (os.getenv("ENVIRONMENT") or "").strip().lower()
+    if explicit_env in {"production", "prod"}:
+        return
+
+    repo_root = Path(__file__).resolve().parents[2]
+    backend_dir = Path(__file__).resolve().parents[1]
+
+    for candidate in (backend_dir / ".env", repo_root / ".env"):
+        if candidate.exists():
+            load_dotenv(candidate, override=False)
+
+    env = (os.getenv("ENVIRONMENT") or "").strip().lower()
+    if not env:
+        for candidate in (backend_dir / ".env.development", repo_root / ".env.development"):
+            if candidate.exists():
+                load_dotenv(candidate, override=False)
+        env = (os.getenv("ENVIRONMENT") or "").strip().lower()
+
+    if env and env not in {"production", "prod"}:
+        for candidate in (backend_dir / f".env.{env}", repo_root / f".env.{env}"):
+            if candidate.exists():
+                load_dotenv(candidate, override=False)
+
+
+_load_local_env_files()
 
 import importlib
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.openapi.utils import get_openapi
+from fastapi.responses import JSONResponse
+from sqlalchemy import text
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.config import get_settings
 from app.core.exceptions import register_exception_handlers
 from app.core.logging import init_logging
-from app.core.soft_launch import refresh_soft_launch_slugs
 from app.core.redis import get_redis
+from app.core.soft_launch import refresh_soft_launch_slugs
+from app.database import async_session_maker
 from app.metrics import setup_metrics
 from app.middleware import register_middlewares
+from app.shared.errors import ErrorResponse
+from app.core.exceptions import json_error_response
+
 
 settings = get_settings()
 logger = logging.getLogger(__name__)
+SAFE_METHODS = {"GET", "HEAD", "OPTIONS", "TRACE"}
+DEV_AI_CSRF_BYPASS_PREFIX = "/api/v1/ai/"
+DEV_ML_CSRF_BYPASS_PREFIXES = (
+    "/api/v1/ml/predictions/ingest",
+    "/api/v1/ml/snapshots",
+)
+
+
+class CSRFMiddleware(BaseHTTPMiddleware):
+    """Simple double-submit cookie CSRF protection."""
+
+    def __init__(self, app: FastAPI, settings):
+        super().__init__(app)
+        self.settings = settings
+        self.exempt_paths = {path.lower() for path in getattr(settings, "csrf_exempt_paths", [])}
+
+    def _is_exempt(self, path: str) -> bool:
+        lower_path = path.lower()
+        return lower_path in self.exempt_paths
+
+    def _is_dev_runtime(self) -> bool:
+        env = str(getattr(self.settings, "environment", "production") or "production").strip().lower()
+        if env in {"production", "prod"}:
+            return False
+        if bool(getattr(self.settings, "debug", False)):
+            return True
+        return env in {"development", "dev", "local", "test"}
+
+    def _should_bypass_for_dev_ai(self, request: Request) -> bool:
+        if not self._is_dev_runtime():
+            return False
+        lower_path = (request.url.path or "").lower()
+        return lower_path == DEV_AI_CSRF_BYPASS_PREFIX.rstrip("/") or lower_path.startswith(DEV_AI_CSRF_BYPASS_PREFIX)
+
+    def _should_bypass_for_dev_ml(self, request: Request) -> bool:
+        if not self._is_dev_runtime():
+            return False
+        lower_path = (request.url.path or "").lower()
+        return any(lower_path.startswith(prefix) for prefix in DEV_ML_CSRF_BYPASS_PREFIXES)
+
+    async def dispatch(self, request: Request, call_next):
+        if not self.settings.csrf_enabled:
+            return await call_next(request)
+        if request.method.upper() in SAFE_METHODS:
+            return await call_next(request)
+
+        if self._is_exempt(request.url.path):
+            return await call_next(request)
+
+        if self._should_bypass_for_dev_ai(request):
+            logger.debug(
+                "csrf.bypass.dev_ai",
+                extra={
+                    "method": request.method,
+                    "path": request.url.path,
+                    "reason": "dev_runtime_ai_prefix",
+                },
+            )
+            return await call_next(request)
+
+        if self._should_bypass_for_dev_ml(request):
+            logger.debug(
+                "csrf.bypass.dev_ml_ingest",
+                extra={
+                    "method": request.method,
+                    "path": request.url.path,
+                    "reason": "dev_runtime_ml_ingest",
+                },
+            )
+            return await call_next(request)
+
+        csrf_cookie = request.cookies.get(self.settings.csrf_cookie_name)
+        csrf_header = request.headers.get(self.settings.csrf_header_name)
+        if not csrf_cookie or not csrf_header or csrf_cookie != csrf_header:
+            return json_error_response(status.HTTP_403_FORBIDDEN, "csrf_failed", "CSRF validation failed")
+
+        return await call_next(request)
 
 
 def _load_api_router() -> APIRouter:
@@ -32,7 +155,7 @@ def _load_api_router() -> APIRouter:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    init_logging(settings.debug)
+    init_logging(settings.debug, settings.log_level)
     app.state.settings = settings
 
     redis_client = None
@@ -56,11 +179,49 @@ app = FastAPI(
     title=settings.app_name,
     debug=settings.debug,
     lifespan=lifespan,
+    generate_unique_id_function=lambda route: f"{sorted(getattr(route, 'methods', {'GET'}))[0].lower()}_{getattr(route, 'path_format', '').lstrip('/').replace('/', '_').replace('-', '_').replace('{', '').replace('}', '')}",
 )
 
+app.add_middleware(CSRFMiddleware, settings=settings)
 setup_metrics(app)
 register_middlewares(app)
 register_exception_handlers(app)
+
+def _custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    schema = get_openapi(
+        title=app.title,
+        version=getattr(settings, "app_version", "0.0.0"),
+        routes=app.routes,
+        description=getattr(app, "description", None),
+    )
+    components = schema.setdefault("components", {})
+    schemas = components.setdefault("schemas", {})
+    security_schemes = components.setdefault("securitySchemes", {})
+    security_schemes.setdefault(
+        "BearerAuth",
+        {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"},
+    )
+    schemas["ErrorResponse"] = ErrorResponse.model_json_schema(ref_template="#/components/schemas/{model}")
+
+    error_ref = {"$ref": "#/components/schemas/ErrorResponse"}
+    error_content = {"application/json": {"schema": error_ref}}
+    for path_item in (schema.get("paths") or {}).values():
+        if not isinstance(path_item, dict):
+            continue
+        for operation in path_item.values():
+            if not isinstance(operation, dict):
+                continue
+            responses = operation.setdefault("responses", {})
+            for status_code in ("400", "401", "403", "404", "409", "422", "500"):
+                responses[status_code] = {"description": "Error", "content": error_content}
+
+    app.openapi_schema = schema
+    return app.openapi_schema
+
+
+app.openapi = _custom_openapi  # type: ignore[assignment]
 
 
 if settings.backend_cors_origins:
@@ -78,6 +239,22 @@ app.include_router(api_router)
 
 @app.get("/health", tags=["health"])
 async def health() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+@app.get("/health/live", tags=["health"])
+async def health_live() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+@app.get("/health/ready", tags=["health"])
+async def health_ready():
+    try:
+        async with async_session_maker() as session:
+            await session.execute(text("SELECT 1"))
+    except Exception as exc:  # pragma: no cover - defensive guard
+        logger.warning("readiness.failed", extra={"reason": str(exc)})
+        return JSONResponse(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, content={"status": "error"})
     return {"status": "ok"}
 
 

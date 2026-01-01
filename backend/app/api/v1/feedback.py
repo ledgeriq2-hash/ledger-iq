@@ -5,11 +5,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import deps
 from app.core.rate_limit import enforce_rate_limit
+from app.metrics import FEEDBACK_SUBMISSIONS
+from app.models.user import User
 from app.schemas.feedback import FeedbackCreate, FeedbackListResponse, FeedbackPublic
 from app.services import feedback_service, tenant_service
-from app.models.user import User
-from app.metrics import FEEDBACK_SUBMISSIONS
-from app.core.soft_launch import is_soft_launch_tenant
 
 router = APIRouter(prefix="/feedback")
 

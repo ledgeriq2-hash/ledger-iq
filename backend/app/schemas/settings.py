@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from typing import Any
 from uuid import UUID
 
 from pydantic import Field, field_validator
@@ -37,4 +38,20 @@ class ChartOfAccountsSettings(BaseSchema):
             raise ValueError("must be a valid UUID") from exc
 
 
-__all__ = ["ChartOfAccountsSettings"]
+class AppSettings(BaseSchema):
+    feature_toggles: dict[str, Any] = Field(default_factory=dict)
+    currency: str = Field(default="USD")
+    taxes: dict[str, Any] = Field(default_factory=dict)
+    field_labels: dict[str, str] = Field(default_factory=dict)
+    theme: dict[str, Any] = Field(default_factory=dict)
+
+
+class AppSettingsUpdate(BaseSchema):
+    feature_toggles: dict[str, Any] | None = None
+    currency: str | None = None
+    taxes: dict[str, Any] | None = None
+    field_labels: dict[str, str] | None = None
+    theme: dict[str, Any] | None = None
+
+
+__all__ = ["ChartOfAccountsSettings", "AppSettings", "AppSettingsUpdate"]

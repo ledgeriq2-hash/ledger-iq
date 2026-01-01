@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import List
 from uuid import UUID
 
 from pydantic import field_validator
@@ -45,8 +44,4 @@ class ProductPublic(IDTimestampMixin, ProductBase):
     id: UUID
 
 
-class ProductList(BaseSchema):
-    items: List[ProductPublic]
-
-
-__all__ = ["ProductBase", "ProductCreate", "ProductUpdate", "ProductPublic", "ProductList"]
+__all__ = ["ProductBase", "ProductCreate", "ProductUpdate", "ProductPublic"]

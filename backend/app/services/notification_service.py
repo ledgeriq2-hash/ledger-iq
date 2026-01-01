@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any, Sequence
+from collections.abc import Sequence
+from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import delete, select
@@ -64,7 +65,7 @@ async def mark_notification_read(
     if not notification:
         return None
     notification.is_read = read
-    notification.read_at = datetime.now(timezone.utc) if read else None
+    notification.read_at = datetime.now(UTC) if read else None
     await session.commit()
     await session.refresh(notification)
     return notification

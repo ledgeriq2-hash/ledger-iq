@@ -1,5 +1,6 @@
 __all__ = [
     "ai_service",
+    "ml_service",
     "customer_service",
     "employee_service",
     "expense_service",
@@ -25,4 +26,6 @@ __all__ = [
     "maintenance_service",
     "recurring_invoice_service",
     "stock_movement_service",
+    "treasury_service",
+    "debt_service",
 ]

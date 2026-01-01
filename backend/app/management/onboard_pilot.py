@@ -7,6 +7,7 @@ from typing import Any
 from app.config import get_settings
 from app.core.soft_launch import refresh_soft_launch_slugs
 from app.database import async_session_maker
+from app.initial_data import seed_tenant
 from app.services import role_service, tenant_config_service, tenant_service, user_service
 
 
@@ -24,6 +25,7 @@ async def onboard(name: str, slug: str, owner_email: str, owner_password: str) -
         tenant = await tenant_service.resolve_tenant(session, slug, scope_id=None)
         if not tenant:
             tenant = await tenant_service.create_tenant(session, {"name": name, "slug": slug}, scope_id=None)
+        await seed_tenant(session, tenant)
         owner_role = await _ensure_owner_role(session, tenant.id)
         existing_user = await user_service.get_user_by_email(session, tenant.id, owner_email)
         if not existing_user:
@@ -43,7 +45,7 @@ async def onboard(name: str, slug: str, owner_email: str, owner_password: str) -
     grafana_url = "http://localhost:3001"  # adjust if deployed elsewhere
     portal_url = f"{settings.frontend_url}/portal"
     return {
-        "tenant": {"name": name, "slug": slug},
+        "tenant": {"id": str(tenant.id), "name": name, "slug": slug},
         "owner_email": owner_email,
         "login_url": login_url,
         "portal_url": portal_url,

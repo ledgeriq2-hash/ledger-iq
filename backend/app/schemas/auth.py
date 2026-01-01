@@ -5,8 +5,8 @@ from app.schemas.common import BaseSchema
 
 class Token(BaseSchema):
     access_token: str
-    refresh_token: str | None = None
     token_type: str = "bearer"
+    expires_in: int | None = None
 
 
 class TokenPayload(BaseSchema):
@@ -21,7 +21,7 @@ class LoginRequest(BaseSchema):
 
 
 class RefreshRequest(BaseSchema):
-    refresh_token: str
+    refresh_token: str | None = None
 
 
 __all__ = ["Token", "TokenPayload", "LoginRequest", "RefreshRequest"]

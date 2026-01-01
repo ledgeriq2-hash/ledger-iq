@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime
 import uuid
+from datetime import datetime
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -26,6 +26,7 @@ class RefreshToken(BaseModel):
         Index("ix_refresh_tokens_tenant_id", "tenant_id"),
         Index("ix_refresh_tokens_created_at", "created_at"),
         Index("ix_refresh_tokens_user_id", "user_id"),
+        Index("ix_refresh_tokens_token_hash", "token_hash", unique=True),
     )
 
 

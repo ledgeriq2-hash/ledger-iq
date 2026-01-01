@@ -1,15 +1,21 @@
 from __future__ import annotations
 
-from datetime import date
+import uuid
+from datetime import UTC, datetime, date
 from decimal import Decimal
-from typing import Any, Iterable, Sequence
-from uuid import UUID
+from typing import Any, Sequence
 
-from sqlalchemy import delete, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
+from app.accounting.dto import LedgerLineInput, RecordFinancialTransactionInput, TreasuryMovementInput
+from app.accounting.use_cases.record_financial_transaction import record_financial_transaction
+from app.accounting.repositories.period_lock_repo import PeriodLockRepository
+from app.core.exceptions import AppException
 from app.models.journal_entry import JournalEntry
-from app.models.journal_entry_line import JournalEntryLine
+from app.models.treasury_transaction import TreasuryTransaction
+from app.services import audit_log_service
 
 
 def _to_dict(payload: Any, *, exclude_unset: bool = False) -> dict[str, Any]:
@@ -20,99 +26,96 @@ def _to_dict(payload: Any, *, exclude_unset: bool = False) -> dict[str, Any]:
     raise TypeError("payload must be a mapping or pydantic model")
 
 
-def validate_journal_balanced(lines: Iterable[dict[str, Any]]) -> bool:
-    debit_total = Decimal("0")
-    credit_total = Decimal("0")
-    for line in lines:
-        debit_total += Decimal(str(line.get("debit") or 0))
-        credit_total += Decimal(str(line.get("credit") or 0))
-    return debit_total.quantize(Decimal("0.01")) == credit_total.quantize(Decimal("0.01"))
-
-
-def _normalize_line(line: dict[str, Any], tenant_id: UUID, entry_id: UUID) -> JournalEntryLine:
-    return JournalEntryLine(
-        account_id=line["account_id"],
-        debit=Decimal(str(line.get("debit") or 0)),
-        credit=Decimal(str(line.get("credit") or 0)),
-        currency_amount=(
-            Decimal(str(line["currency_amount"])) if line.get("currency_amount") is not None else None
-        ),
-        line_description=line.get("line_description"),
-        tenant_id=tenant_id,
-        journal_entry_id=entry_id,
+async def _load_entry(session: AsyncSession, tenant_id: uuid.UUID, entry_id: uuid.UUID, *, include_lines: bool = False) -> JournalEntry | None:
+    stmt = select(JournalEntry).where(
+        JournalEntry.id == entry_id,
+        JournalEntry.tenant_id == tenant_id,
     )
+    if include_lines:
+        stmt = stmt.options(selectinload(JournalEntry.lines))
+    result = await session.execute(stmt)
+    return result.scalar_one_or_none()
 
 
-async def list_journal_entries(session: AsyncSession, tenant_id: UUID) -> Sequence[JournalEntry]:
+async def list_journal_entries(session: AsyncSession, tenant_id: uuid.UUID) -> Sequence[JournalEntry]:
     result = await session.execute(select(JournalEntry).where(JournalEntry.tenant_id == tenant_id))
     return result.scalars().all()
 
 
 async def get_journal_entry(
-    session: AsyncSession, tenant_id: UUID, entry_id: UUID
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    entry_id: uuid.UUID,
 ) -> JournalEntry | None:
-    result = await session.execute(
-        select(JournalEntry).where(JournalEntry.id == entry_id, JournalEntry.tenant_id == tenant_id)
-    )
-    return result.scalar_one_or_none()
+    return await _load_entry(session, tenant_id, entry_id, include_lines=True)
 
 
-async def _replace_lines(
-    session: AsyncSession, entry: JournalEntry, lines_data: list[dict[str, Any]]
-) -> list[JournalEntryLine]:
-    if not validate_journal_balanced(lines_data):
-        raise ValueError("Journal entry is not balanced (debits != credits)")
-
-    await session.execute(
-        delete(JournalEntryLine).where(
-            JournalEntryLine.journal_entry_id == entry.id, JournalEntryLine.tenant_id == entry.tenant_id
-        )
-    )
-    created_lines: list[JournalEntryLine] = []
-    for line_data in lines_data:
-        line = _normalize_line(line_data, tenant_id=entry.tenant_id, entry_id=entry.id)
-        session.add(line)
-        created_lines.append(line)
-    return created_lines
-
-
-async def create_journal_entry(session: AsyncSession, tenant_id: UUID, payload: Any) -> JournalEntry:
+async def create_journal_entry(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    payload: Any,
+    *,
+    actor_id: uuid.UUID | None = None,
+) -> JournalEntry:
     data = _to_dict(payload)
     lines_data = data.pop("lines", None)
     if not lines_data:
         raise ValueError("Journal entry requires at least one line")
 
-    entry = JournalEntry(**data, tenant_id=tenant_id)
-    session.add(entry)
-    await session.flush()
-    created_lines = await _replace_lines(session, entry, lines_data)
-    await session.commit()
-    await session.refresh(entry)
+    reference_type = data.get("source_module") or data.get("reference") or "manual_journal"
+    reference_id = data.get("source_id") or uuid.uuid4()
+
+    result = await record_financial_transaction(
+        session,
+        RecordFinancialTransactionInput(
+            tenant_id=tenant_id,
+            actor_id=actor_id,
+            date=data["date"],
+            description=data.get("description"),
+            reference_type=str(reference_type),
+            reference_id=reference_id,
+            lines=[
+                {
+                    "account_id": line["account_id"],
+                    "debit": Decimal(str(line.get("debit") or 0)),
+                    "credit": Decimal(str(line.get("credit") or 0)),
+                    "entity_type": line.get("entity_type"),
+                    "entity_id": line.get("entity_id"),
+                    "reference_type": line.get("reference_type") or str(reference_type),
+                    "reference_id": line.get("reference_id") or reference_id,
+                    "description": line.get("line_description"),
+                }
+                for line in lines_data
+            ],
+            treasury_movement=None,
+        ),
+        commit=True,
+    )
+
+    entry = await get_journal_entry(session, tenant_id, result.journal_entry_id)
+    if entry is None:
+        raise AppException(
+            code="journal_entry_not_found",
+            message="Journal entry created but could not be loaded",
+            http_status=500,
+        )
     return entry
 
 
 async def update_journal_entry(
-    session: AsyncSession, tenant_id: UUID, entry_id: UUID, payload: Any
+    session: AsyncSession, tenant_id: uuid.UUID, entry_id: uuid.UUID, payload: Any
 ) -> JournalEntry | None:
-    entry = await get_journal_entry(session, tenant_id, entry_id)
-    if not entry:
-        return None
-    data = _to_dict(payload, exclude_unset=True)
-    lines_data = data.pop("lines", None)
-    for field, value in data.items():
-        if field in {"id", "tenant_id", "lines"}:
-            continue
-        setattr(entry, field, value)
-    if lines_data is not None:
-        created_lines = await _replace_lines(session, entry, lines_data)
-    await session.commit()
-    await session.refresh(entry)
-    return entry
+    _ = session, tenant_id, entry_id, payload
+    raise AppException(
+        code="journal_updates_disabled",
+        message="Updating journal entries is disabled; create a new correction entry instead",
+        http_status=405,
+    )
 
 
 async def create_journal_entry_with_lines(
     session: AsyncSession,
-    tenant_id: UUID,
+    tenant_id: uuid.UUID,
     date: date,
     description: str | None,
     lines: list[dict[str, Any]],
@@ -121,44 +124,29 @@ async def create_journal_entry_with_lines(
     currency_code: str | None = None,
     fx_rate: float | Decimal | None = None,
     source_module: str | None = None,
-    source_id: UUID | None = None,
+    source_id: uuid.UUID | None = None,
     is_posted: bool = True,
-    reversed_of_id: UUID | None = None,
+    reversed_of_id: uuid.UUID | None = None,
 ) -> JournalEntry:
-    """
-    Convenience helper to create a journal entry and its lines atomically.
-
-    Supports multi-currency fields and source metadata.
-    """
-    if not lines:
-        raise ValueError("Journal entry requires at least one line")
-    if not validate_journal_balanced(lines):
-        raise ValueError("Journal entry is not balanced (debits != credits)")
-
-    entry = JournalEntry(
-        date=date,
-        description=description,
-        reference=reference,
-        is_posted=is_posted,
-        currency_code=currency_code,
-        fx_rate=float(fx_rate) if fx_rate is not None else None,
-        source_module=source_module,
-        source_id=source_id,
-        reversed_of_id=reversed_of_id,
-        tenant_id=tenant_id,
+    _ = (
+        session,
+        tenant_id,
+        date,
+        description,
+        lines,
+        reference,
+        currency_code,
+        fx_rate,
+        source_module,
+        source_id,
+        is_posted,
+        reversed_of_id,
     )
-    session.add(entry)
-    await session.flush()
-
-    created_lines: list[JournalEntryLine] = []
-    for line in lines:
-        created_line = _normalize_line(line, tenant_id=tenant_id, entry_id=entry.id)
-        session.add(created_line)
-        created_lines.append(created_line)
-
-    await session.commit()
-    await session.refresh(entry)
-    return entry
+    raise AppException(
+        code="journal_writes_must_use_engine",
+        message="Direct journal writes are disabled; use record_financial_transaction",
+        http_status=405,
+    )
 
 
 async def create_reversing_entry(*args, **kwargs):
@@ -168,67 +156,284 @@ async def create_reversing_entry(*args, **kwargs):
 
 async def create_reversing_entry_impl(
     session: AsyncSession,
-    tenant_id: UUID,
-    original_journal_entry_id: UUID,
+    tenant_id: uuid.UUID,
+    original_journal_entry_id: uuid.UUID,
     reversal_date: date,
 ) -> JournalEntry:
-    """
-    Create a reversing journal entry for the given original entry.
+    _ = session, tenant_id, original_journal_entry_id, reversal_date
+    raise AppException(
+        code="journal_writes_must_use_engine",
+        message="Direct journal writes are disabled; use record_financial_transaction",
+        http_status=405,
+    )
 
-    - Copies currency, fx_rate, source_module, source_id.
-    - Sets reversed_of_id to the original entry.
-    - Swaps debit/credit on each line.
-    """
-    original = await get_journal_entry(session, tenant_id, original_journal_entry_id)
-    if not original:
-        raise ValueError("Original journal entry not found")
 
-    reversed_lines: list[dict[str, Any]] = []
-    for line in original.lines:
-        reversed_lines.append(
-            {
-                "account_id": line.account_id,
-                "debit": line.credit,
-                "credit": line.debit,
-                "currency_amount": line.currency_amount,
-                "line_description": f"Reversal of {line.line_description}" if line.line_description else "Reversal",
-            }
+async def delete_journal_entry(session: AsyncSession, tenant_id: uuid.UUID, entry_id: uuid.UUID) -> bool:
+    _ = session, tenant_id, entry_id
+    raise AppException(code="deletes_disabled", message="Deleting journal entries is disabled", http_status=405)
+
+
+async def _ensure_period_open(session: AsyncSession, tenant_id: uuid.UUID, entry_date: date) -> None:
+    period_lock_repo = PeriodLockRepository(session=session)
+    if await period_lock_repo.is_locked(tenant_id=tenant_id, entry_date=entry_date):
+        raise AppException(
+            code="accounting_period_locked",
+            message="Accounting period is locked for the provided date",
+            http_status=409,
         )
 
-    new_entry = JournalEntry(
-        date=reversal_date,
-        description=original.description or f"Reversal of {original.reference or original.id}",
-        reference=original.reference,
-        is_posted=True,
-        currency_code=original.currency_code,
-        fx_rate=original.fx_rate,
-        source_module=original.source_module,
-        source_id=original.source_id,
-        reversed_of_id=original.id,
-        tenant_id=tenant_id,
+
+async def reverse_journal_entry(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    entry_id: uuid.UUID,
+    *,
+    actor_id: uuid.UUID | None = None,
+    reason: str | None = None,
+) -> JournalEntry:
+    entry = await get_journal_entry(session, tenant_id, entry_id)
+    if not entry:
+        raise AppException(code="journal_entry_not_found", message="Journal entry not found", http_status=404)
+    if entry.is_voided:
+        raise AppException(code="journal_entry_voided", message="Cannot reverse a voided entry", http_status=409)
+    if not entry.is_posted:
+        raise AppException(
+            code="journal_reverse_disallowed",
+            message="Only posted entries can be reversed",
+            http_status=409,
+        )
+    if entry.is_reversed:
+        raise AppException(
+            code="journal_already_reversed",
+            message="Journal entry has already been reversed",
+            http_status=409,
+        )
+    await _ensure_period_open(session, tenant_id, entry.date)
+
+    lines = [
+        LedgerLineInput(
+            account_id=line.account_id,
+            debit=line.credit,
+            credit=line.debit,
+            entity_type=line.entity_type,
+            entity_id=line.entity_id,
+            reference_type=line.reference_type or "journal_reversal",
+            reference_id=line.reference_id or entry.id,
+            description=f"Reversal of {line.line_description or entry.description or ''}".strip(),
+            currency_amount=line.currency_amount,
+        )
+        for line in entry.lines
+    ]
+
+    treasury_movement = None
+    original_treasury_tx = None
+    if entry.treasury_transaction_id:
+        tx = await session.get(TreasuryTransaction, entry.treasury_transaction_id)
+        if tx:
+            direction = "out" if tx.direction == "in" else "in"
+            party_type = None
+            party_id = None
+            if tx.customer_id:
+                party_type, party_id = "client", tx.customer_id
+            elif tx.supplier_id:
+                party_type, party_id = "supplier", tx.supplier_id
+            elif tx.employee_id:
+                party_type, party_id = "worker", tx.employee_id
+            treasury_movement = TreasuryMovementInput(
+                treasury_id=tx.treasury_id,
+                amount=Decimal(str(tx.amount)),
+                direction=direction,
+                reference_type="journal_reversal",
+                reference_id=entry.id,
+                movement_type=tx.movement_type,
+                party_type=party_type,
+                party_id=party_id,
+                reversed_of_id=tx.id,
+            )
+            original_treasury_tx = tx
+
+    metadata = {
+        "reversed_of_id": entry.id,
+        "is_reversed": True,
+        "adjustment_reason": reason,
+    }
+
+    result = await record_financial_transaction(
+        session,
+        RecordFinancialTransactionInput(
+            tenant_id=tenant_id,
+            actor_id=actor_id,
+            date=datetime.now(UTC).date(),
+            description=reason or f"Reversal of {entry.id}",
+            reference_type=entry.source_module or entry.reference or "journal_reversal",
+            reference_id=entry.id,
+            lines=lines,
+            treasury_movement=treasury_movement,
+            entry_metadata=metadata,
+        ),
+        commit=True,
     )
-    session.add(new_entry)
-    await session.flush()
 
-    for line in reversed_lines:
-        session.add(_normalize_line(line, tenant_id=tenant_id, entry_id=new_entry.id))
+    reversed_entry = await get_journal_entry(session, tenant_id, result.journal_entry_id)
+    if reversed_entry is None:
+        raise AppException(
+            code="journal_entry_not_found",
+            message="Reversal created but could not be loaded",
+            http_status=500,
+        )
 
+    entry.is_reversed = True
+    if original_treasury_tx:
+        original_treasury_tx.is_reversed = True
     await session.commit()
-    await session.refresh(new_entry)
-    return new_entry
+
+    await audit_log_service.record_audit_log(
+        session,
+        tenant_id,
+        "journal_entries",
+        str(entry.id),
+        "journal_entry_reverse",
+        user_id=actor_id,
+        new_data={
+            "reversal_id": str(reversed_entry.id),
+            "reason": reason,
+        },
+    )
+    return reversed_entry
 
 
-async def delete_journal_entry(session: AsyncSession, tenant_id: UUID, entry_id: UUID) -> bool:
-    await session.execute(
-        delete(JournalEntryLine).where(
-            JournalEntryLine.journal_entry_id == entry_id, JournalEntryLine.tenant_id == tenant_id
+async def void_journal_entry(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    entry_id: uuid.UUID,
+    *,
+    actor_id: uuid.UUID | None = None,
+    reason: str | None = None,
+) -> JournalEntry:
+    entry = await get_journal_entry(session, tenant_id, entry_id)
+    if not entry:
+        raise AppException(code="journal_entry_not_found", message="Journal entry not found", http_status=404)
+    if entry.is_voided:
+        raise AppException(code="journal_entry_voided", message="Journal entry already voided", http_status=409)
+    if entry.is_posted:
+        raise AppException(
+            code="journal_void_posted_disallowed",
+            message="Posted journal entries must be corrected via reversal or adjustment",
+            http_status=409,
+        )
+
+    await _ensure_period_open(session, tenant_id, entry.date)
+    entry.is_voided = True
+    entry.voided_at = datetime.now(UTC)
+    entry.voided_by_user_id = actor_id
+    if reason:
+        entry.voided_reason = reason
+    if entry.treasury_transaction_id:
+        tx = await session.get(TreasuryTransaction, entry.treasury_transaction_id)
+        if tx:
+            tx.is_voided = True
+            tx.voided_at = entry.voided_at
+            tx.voided_by_user_id = actor_id
+            if reason:
+                tx.voided_reason = reason
+    await session.commit()
+    await session.refresh(entry)
+
+    await audit_log_service.record_audit_log(
+        session,
+        tenant_id,
+        "journal_entries",
+        str(entry.id),
+        "journal_entry_void",
+        user_id=actor_id,
+        new_data={"reason": reason},
+    )
+    return entry
+
+
+async def adjust_journal_entry(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    entry_id: uuid.UUID,
+    *,
+    actor_id: uuid.UUID | None = None,
+    reason: str | None = None,
+    lines: Sequence[dict[str, Any]],
+    idempotency_key: str,
+) -> JournalEntry:
+    if not idempotency_key:
+        raise AppException(code="missing_idempotency_key", message="Idempotency-Key header required", http_status=400)
+    entry = await get_journal_entry(session, tenant_id, entry_id)
+    if not entry:
+        raise AppException(code="journal_entry_not_found", message="Journal entry not found", http_status=404)
+    if entry.is_voided:
+        raise AppException(code="journal_entry_voided", message="Cannot adjust a voided entry", http_status=409)
+    await _ensure_period_open(session, tenant_id, datetime.now(UTC).date())
+
+    existing = await session.execute(
+        select(JournalEntry).where(
+            JournalEntry.adjusted_of_id == entry.id,
+            JournalEntry.idempotency_key == idempotency_key,
         )
     )
-    result = await session.execute(
-        delete(JournalEntry).where(JournalEntry.id == entry_id, JournalEntry.tenant_id == tenant_id)
+    existing_entry = existing.scalar_one_or_none()
+    if existing_entry:
+        return existing_entry
+
+    parsed_lines = [
+        LedgerLineInput(
+            account_id=Line["account_id"],
+            debit=Line.get("debit") or Decimal("0"),
+            credit=Line.get("credit") or Decimal("0"),
+            entity_type=Line.get("entity_type"),
+            entity_id=Line.get("entity_id"),
+            reference_type=Line.get("reference_type") or "journal_adjustment",
+            reference_id=Line.get("reference_id") or entry.id,
+            description=Line.get("line_description"),
+            currency_amount=Line.get("currency_amount"),
+        )
+        for Line in lines
+    ]
+
+    metadata = {
+        "adjusted_of_id": entry.id,
+        "idempotency_key": idempotency_key,
+        "adjustment_reason": reason,
+    }
+
+    result = await record_financial_transaction(
+        session,
+        RecordFinancialTransactionInput(
+            tenant_id=tenant_id,
+            actor_id=actor_id,
+            date=datetime.now(UTC).date(),
+            description=reason or f"Adjustment of {entry.id}",
+            reference_type=entry.source_module or entry.reference or "journal_adjustment",
+            reference_id=entry.id,
+            lines=parsed_lines,
+            entry_metadata=metadata,
+        ),
+        commit=True,
     )
-    await session.commit()
-    return result.rowcount > 0
+
+    adjustment_entry = await get_journal_entry(session, tenant_id, result.journal_entry_id)
+    if adjustment_entry is None:
+        raise AppException(
+            code="journal_entry_not_found",
+            message="Adjustment created but could not be loaded",
+            http_status=500,
+        )
+
+    await audit_log_service.record_audit_log(
+        session,
+        tenant_id,
+        "journal_entries",
+        str(entry.id),
+        "journal_entry_adjust",
+        user_id=actor_id,
+        new_data={"adjustment_id": str(adjustment_entry.id), "reason": reason},
+    )
+    return adjustment_entry
 
 
 __all__ = [
@@ -238,7 +443,9 @@ __all__ = [
     "create_journal_entry_with_lines",
     "update_journal_entry",
     "delete_journal_entry",
-    "validate_journal_balanced",
     "create_reversing_entry",
     "create_reversing_entry_impl",
+    "reverse_journal_entry",
+    "void_journal_entry",
+    "adjust_journal_entry",
 ]

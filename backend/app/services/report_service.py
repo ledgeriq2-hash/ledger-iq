@@ -2,16 +2,18 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import date, datetime, timezone
+from collections.abc import Callable, Coroutine, Sequence
+from datetime import UTC, date, datetime
 from decimal import Decimal
-from typing import Any, Callable, Coroutine, Sequence
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import delete, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.settings_utils import TenantSettingsError
 from app.core.redis import get_redis
+from app.core.settings_utils import TenantSettingsError
 from app.models.chart_of_account import AccountType, ChartOfAccount
 from app.models.journal_entry import JournalEntry
 from app.models.journal_entry_line import JournalEntryLine
@@ -43,20 +45,28 @@ async def get_report_cache(
     session: AsyncSession, tenant_id: UUID, report_type: str, params_hash: str
 ) -> ReportsCache | None:
     result = await session.execute(
-        select(ReportsCache).where(
+        select(ReportsCache)
+        .where(
             ReportsCache.report_type == report_type,
             ReportsCache.params_hash == params_hash,
             ReportsCache.tenant_id == tenant_id,
         )
+        .order_by(ReportsCache.created_at.desc(), ReportsCache.id.desc())
+        .limit(1)
     )
-    return result.scalar_one_or_none()
+    return result.scalars().first()
 
 
 async def save_report_cache(session: AsyncSession, tenant_id: UUID, payload: Any) -> ReportsCache:
     data = _to_dict(payload)
     cache = ReportsCache(**data, tenant_id=tenant_id)
     session.add(cache)
-    await session.commit()
+    try:
+        await session.commit()
+    except IntegrityError:
+        await session.rollback()
+        existing = await get_report_cache(session, tenant_id, cache.report_type, cache.params_hash)
+        return existing or cache
     await session.refresh(cache)
     return cache
 
@@ -100,6 +110,11 @@ async def get_report_data(
     *,
     redis_ttl: int = 180,
 ) -> dict[str, Any]:
+    if report_type == "trial_balance" and generator:
+        result = await generator() if asyncio.iscoroutinefunction(generator) else generator()
+        data = await result if asyncio.iscoroutine(result) else result
+        return {"report_type": report_type, "data": data, "cached": False}
+
     cache_key = f"report:{tenant_id}:{report_type}:{params_hash}"
     redis_client = None
     try:
@@ -111,7 +126,7 @@ async def get_report_data(
         redis_client = None
 
     cache = await get_report_cache(session, tenant_id, report_type, params_hash)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     if cache and (cache.expires_at is None or cache.expires_at > now):
         return {"report_type": report_type, "data": _parse_data(cache.data_json), "cached": True}
 
@@ -119,7 +134,7 @@ async def get_report_data(
     if generator:
         result = await generator() if asyncio.iscoroutinefunction(generator) else generator()
         data = await result if asyncio.iscoroutine(result) else result
-        serialized = json.dumps(data, default=str)
+        serialized = json.dumps(data, default=str, ensure_ascii=False)
         payload = {
             "report_type": report_type,
             "params_hash": params_hash,

@@ -31,4 +31,12 @@ class UserPublic(IDTimestampMixin, UserBase):
     last_login_at: datetime | None = None
 
 
-__all__ = ["UserBase", "UserCreate", "UserUpdate", "UserPublic"]
+class UserList(BaseSchema):
+    items: list[UserPublic]
+    page: int = 1
+    page_size: int = 25
+    total: int = 0
+    pages: int = 0
+
+
+__all__ = ["UserBase", "UserCreate", "UserUpdate", "UserPublic", "UserList"]

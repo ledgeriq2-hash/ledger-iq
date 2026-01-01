@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import deps
+from app.core.pagination import PaginationParams, pagination_params
 from app.models.user import User
 from app.schemas.supplier import SupplierCreate, SupplierList, SupplierPublic, SupplierUpdate
 from app.services import supplier_service
@@ -18,9 +19,10 @@ async def list_suppliers(
     session: AsyncSession = Depends(deps.get_db),
     tenant_id: UUID = Depends(deps.get_current_tenant),
     _: User = Depends(deps.get_current_active_user),
+    pagination: PaginationParams = Depends(pagination_params),
 ):
-    suppliers = await supplier_service.list_suppliers(session, tenant_id)
-    return SupplierList(items=suppliers)
+    suppliers, total = await supplier_service.list_suppliers(session, tenant_id, pagination)
+    return SupplierList.from_results(items=suppliers, total=total, params=pagination)
 
 
 @router.get("/{supplier_id}", response_model=SupplierPublic)

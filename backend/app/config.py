@@ -1,13 +1,22 @@
 from __future__ import annotations
 
-from app.core.settings import Settings, get_settings as _get_settings
+from functools import lru_cache
 
-settings: Settings = _get_settings()
+from app.core.settings import Settings
+from app.core.settings import get_settings as _get_settings
 
 
+@lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    """Return application settings singleton."""
-    return settings
+    """
+    Lazy & cached settings loader.
+
+    IMPORTANT:
+    - Do NOT initialize settings at import time.
+    - This avoids ValidationError when env vars are not loaded yet
+      (e.g. when running scripts like bootstrap_demo).
+    """
+    return _get_settings()
 
 
-__all__ = ["Settings", "get_settings", "settings"]
+__all__ = ["Settings", "get_settings"]

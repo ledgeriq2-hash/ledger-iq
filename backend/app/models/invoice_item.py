@@ -1,15 +1,18 @@
 from __future__ import annotations
 
-from decimal import Decimal
 import uuid
+from decimal import Decimal
+from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, Index, Numeric, String, Text, text
+from sqlalchemy import ForeignKey, Index, Numeric, Text, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import BaseModel
-from app.models.invoice import Invoice
 from app.models.product import Product
+
+if TYPE_CHECKING:
+    from app.models.invoice import Invoice
 
 
 class InvoiceItem(BaseModel):
@@ -31,7 +34,7 @@ class InvoiceItem(BaseModel):
     tax_rate: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False, server_default=text("0"))
     line_total: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False, server_default=text("0"))
 
-    invoice: Mapped[Invoice] = relationship("Invoice", back_populates="items", lazy="joined")
+    invoice: Mapped["Invoice"] = relationship("Invoice", back_populates="items", lazy="joined")
     product: Mapped[Product | None] = relationship("Product", lazy="joined")
 
     __table_args__ = (

@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import deps
 from app.core.permissions import ACCOUNTANT, ADMIN, OWNER, VIEWER, require_roles
 from app.models.user import User
-from app.schemas.invoice import InvoiceCreate, InvoiceList, InvoicePublic, InvoiceUpdate
-from app.services import invoice_service, billing_service
+from app.schemas.invoice import InvoiceCreate, InvoiceList, InvoicePaymentCreate, InvoicePublic, InvoiceUpdate
+from app.services import billing_service, invoice_service
 
 router = APIRouter(prefix="/invoices")
 
@@ -54,6 +54,33 @@ async def create_invoice(
     return await invoice_service.create_invoice(session, tenant_id, payload)
 
 
+@router.post("/{invoice_id}/post", response_model=InvoicePublic)
+async def post_invoice(
+    invoice_id: UUID,
+    request: Request,
+    session: AsyncSession = Depends(deps.get_db),
+    tenant_id: UUID = Depends(deps.get_current_tenant),
+    _: User = Depends(deps.get_current_active_user),
+    __: User = Depends(require_roles([OWNER, ADMIN, ACCOUNTANT])),
+):
+    actor_id = getattr(request.state, "user_id", None)
+    return await invoice_service.post_invoice(session, tenant_id, invoice_id, actor_id=actor_id)
+
+
+@router.post("/{invoice_id}/payments", response_model=InvoicePublic)
+async def record_partial_payment(
+    invoice_id: UUID,
+    payload: InvoicePaymentCreate,
+    request: Request,
+    session: AsyncSession = Depends(deps.get_db),
+    tenant_id: UUID = Depends(deps.get_current_tenant),
+    _: User = Depends(deps.get_current_active_user),
+    __: User = Depends(require_roles([OWNER, ADMIN, ACCOUNTANT])),
+):
+    actor_id = getattr(request.state, "user_id", None)
+    return await invoice_service.record_partial_payment(session, tenant_id, invoice_id, payload, actor_id=actor_id)
+
+
 @router.put("/{invoice_id}", response_model=InvoicePublic)
 async def update_invoice(
     invoice_id: UUID,
@@ -81,6 +108,18 @@ async def delete_invoice(
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice not found")
     return None
+
+
+@router.post("/{invoice_id}/adjustments", status_code=status.HTTP_501_NOT_IMPLEMENTED)
+async def create_invoice_adjustment(
+    invoice_id: UUID,
+    session: AsyncSession = Depends(deps.get_db),
+    tenant_id: UUID = Depends(deps.get_current_tenant),
+    _: User = Depends(deps.get_current_active_user),
+    __: User = Depends(require_roles([OWNER, ADMIN, ACCOUNTANT])),
+):
+    _ = session, tenant_id, invoice_id
+    raise HTTPException(status_code=status.HTTP_501_NOT_IMPLEMENTED, detail="Invoice adjustments not implemented yet")
 
 
 __all__ = ["router"]

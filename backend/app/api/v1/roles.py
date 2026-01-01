@@ -2,14 +2,15 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import deps
 from app.core.permissions import ADMIN, OWNER, require_roles
 from app.models.user import User
-from app.schemas.role import RoleCreate, RolePublic, RoleUpdate
+from app.schemas.role import RoleCreate, RoleList, RolePublic, RoleUpdate
 from app.services import role_service
+from app.utils.pagination import total_pages
 
 router = APIRouter(
     prefix="/roles",
@@ -17,14 +18,19 @@ router = APIRouter(
 )
 
 
-@router.get("/", response_model=list[RolePublic])
+@router.get("/", response_model=RoleList)
 async def list_roles(
     session: AsyncSession = Depends(deps.get_db),
     tenant_id: UUID | None = Depends(deps.get_current_tenant),
     _: User = Depends(deps.get_current_active_user),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
 ):
-    roles = await role_service.list_roles(session, tenant_id)
-    return roles
+    roles, total = await role_service.list_roles(
+        session, tenant_id, page=page, page_size=page_size, include_total=True
+    )
+    pages = total_pages(total, page_size)
+    return RoleList(items=roles, page=page, page_size=page_size, total=total, pages=pages)
 
 
 @router.get("/{role_id}", response_model=RolePublic)

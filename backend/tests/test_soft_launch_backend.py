@@ -7,9 +7,10 @@ from sqlalchemy import select
 from app.config import get_settings
 from app.core.soft_launch import is_soft_launch_tenant
 from app.database import async_session_maker
+from app.initial_data import seed_tenant
 from app.main import app
 from app.models.error_event import ErrorEvent
-from app.models.feedback import Feedback
+from app.models.tenant import Tenant
 from app.services import (
     customer_service,
     invoice_service,
@@ -47,6 +48,8 @@ async def test_usage_counters_increment(register_owner):
     tenant_id = uuid.UUID(registration["tenant"]["id"])
 
     async with async_session_maker() as session:
+        tenant = await session.get(Tenant, tenant_id)
+        await seed_tenant(session, tenant)
         # Record a login and create baseline entities.
         await usage_service.record_login(session, tenant_id)
         await tenant_service.get_tenant(session, tenant_id, scope_id=None)
@@ -58,7 +61,7 @@ async def test_usage_counters_increment(register_owner):
         customer = await customer_service.create_customer(
             session,
             tenant_id,
-            {"name": "Acme", "email": "acme@example.com"},
+            {"code": "USAGE-ACME", "name": "Acme", "email": "acme@example.com"},
         )
         invoice = await invoice_service.create_invoice(
             session,
@@ -80,18 +83,23 @@ async def test_usage_counters_increment(register_owner):
                 ],
             },
         )
-    await payment_service.create_payment(
-        session,
-        tenant_id,
-        {
-            "invoice_id": invoice.id,
-            "customer_id": customer.id,
-            "amount": "10.00",
-            "method": "card",
-        },
-    )
+        invoice_id = invoice.id
+        customer_id = customer.id
 
-    usage_rows = await usage_service.fetch_recent_usage(session, tenant_id, days=1)
+    async with async_session_maker() as session:
+        await payment_service.create_payment(
+            session,
+            tenant_id,
+            {
+                "invoice_id": invoice_id,
+                "customer_id": customer_id,
+                "amount": "10.00",
+                "method": "card",
+            },
+        )
+
+        usage_rows = await usage_service.fetch_recent_usage(session, tenant_id, days=1)
+
     assert usage_rows, "usage rows should be recorded"
     usage = usage_rows[0]
     assert usage.customers_created == 1

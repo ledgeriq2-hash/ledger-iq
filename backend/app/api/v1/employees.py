@@ -6,21 +6,23 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import deps
+from app.core.pagination import PaginatedResponse, PaginationParams, pagination_params
 from app.models.user import User
-from app.schemas.employee import EmployeeCreate, EmployeeList, EmployeePublic, EmployeeUpdate
+from app.schemas.employee import EmployeeCreate, EmployeePublic, EmployeeUpdate
 from app.services import employee_service
 
 router = APIRouter(prefix="/employees")
 
 
-@router.get("/", response_model=EmployeeList)
+@router.get("/", response_model=PaginatedResponse[EmployeePublic])
 async def list_employees(
     session: AsyncSession = Depends(deps.get_db),
     tenant_id: UUID = Depends(deps.get_current_tenant),
     _: User = Depends(deps.get_current_active_user),
+    pagination: PaginationParams = Depends(pagination_params),
 ):
-    employees = await employee_service.list_employees(session, tenant_id)
-    return EmployeeList(items=employees)
+    employees, total = await employee_service.list_employees(session, tenant_id, pagination)
+    return PaginatedResponse[EmployeePublic].from_results(items=employees, total=total, params=pagination)
 
 
 @router.get("/{employee_id}", response_model=EmployeePublic)

@@ -37,8 +37,8 @@ def generate_forecast(payload: Any, window: int = 3, horizon: int = 3, alpha: fl
     last_level = smoothed[-1]
     forecast_values = [last_level for _ in range(horizon)]
 
-    residuals = [actual - fitted for actual, fitted in zip(series_window, smoothed)]
-    residual_std = (sum((r ** 2 for r in residuals)) / len(residuals)) ** 0.5 if residuals else 0
+    residuals = [actual - fitted for actual, fitted in zip(series_window, smoothed, strict=True)]
+    residual_std = (sum(r ** 2 for r in residuals) / len(residuals)) ** 0.5 if residuals else 0
     spread = residual_std or (abs(last_level) * 0.1)
     lower = [max(0, v - spread) for v in forecast_values]
     upper = [v + spread for v in forecast_values]

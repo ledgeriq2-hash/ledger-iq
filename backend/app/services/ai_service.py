@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta, timezone
+from collections.abc import Sequence
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from typing import Any, Sequence
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import delete, func, select
@@ -12,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.ai import anomaly, forecast
 from app.metrics import ADMIN_ACTIONS, AI_FORECASTS_CALLED, AI_USAGE, ANOMALIES_DETECTED
 from app.models.ai_log import AiLog
+from app.models.ai_run import AiRun
 from app.schemas.ai import (
     AiOverviewAlert,
     AiOverviewForecastSummary,
@@ -30,8 +32,15 @@ def _to_dict(payload: Any, *, exclude_unset: bool = False) -> dict[str, Any]:
 
 def _json_dumps(value: Any) -> str:
     try:
-        return json.dumps(value, default=str)
+        return json.dumps(value, default=str, ensure_ascii=False)
     except TypeError:
+        return str(value)
+
+
+def _jsonable(value: Any) -> Any:
+    try:
+        return json.loads(json.dumps(value, default=str, ensure_ascii=False))
+    except Exception:
         return str(value)
 
 
@@ -68,13 +77,39 @@ def _call_ai_function(module: Any, function_names: list[str], *args: Any, **kwar
     raise RuntimeError(f"No AI function found in module {module.__name__} for names {function_names}")
 
 
-async def run_forecast(session: AsyncSession, tenant_id: UUID, request: Any) -> dict[str, Any]:
+async def run_forecast(
+    session: AsyncSession,
+    tenant_id: UUID,
+    request: Any,
+    *,
+    requested_by: UUID | None = None,
+) -> dict[str, Any]:
     await billing_service.enforce_plan_limit(session, tenant_id, "ai_calls")
     data = _to_dict(request)
+    started_at = datetime.now(UTC)
+    run = AiRun(
+        tenant_id=tenant_id,
+        status="RUNNING",
+        started_at=started_at,
+        finished_at=None,
+        error=None,
+        prediction_type="forecast",
+        model_version="forecast-v1",
+        data_snapshot_id=None,
+        params={"request": _jsonable(data)},
+        metrics={},
+        trigger="forecast",
+        requested_by=requested_by,
+    )
+    session.add(run)
+    await session.flush()
+
     result: Any | None = None
+    error: str | None = None
     try:
         result = _call_ai_function(forecast, ["generate_forecast", "run_forecast"], data)
-    except Exception:
+    except Exception as exc:
+        error = str(exc)[:500]
         result = None
 
     score = None
@@ -85,7 +120,22 @@ async def run_forecast(session: AsyncSession, tenant_id: UUID, request: Any) -> 
     increment_mb = (payload_bytes + result_bytes) / (1024 * 1024)
     await billing_service.enforce_plan_limit(session, tenant_id, "storage_mb", increment=increment_mb)
 
-    await create_ai_log(
+    metrics: dict[str, Any] = {}
+    if isinstance(result, dict):
+        for key in ("confidence", "mape", "rmse"):
+            if key in result:
+                metrics[key] = _jsonable(result.get(key))
+    if error:
+        run.status = "FAILED"
+        run.error = error
+    else:
+        run.status = "SUCCESS"
+    run.finished_at = datetime.now(UTC)
+    run.metrics = metrics
+    await session.commit()
+    await session.refresh(run)
+
+    log = await create_ai_log(
         session,
         tenant_id,
         {
@@ -105,6 +155,11 @@ async def run_forecast(session: AsyncSession, tenant_id: UUID, request: Any) -> 
         "forecast": result.get("forecast") if isinstance(result, dict) else result,
         "confidence": score,
         "intervals": result.get("intervals") if isinstance(result, dict) else None,
+        "baseline": result.get("baseline") if isinstance(result, dict) else None,
+        "mape": result.get("mape") if isinstance(result, dict) else None,
+        "rmse": result.get("rmse") if isinstance(result, dict) else None,
+        "model_version": "forecast-v1",
+        "run_id": run.id,
     }
 
 
@@ -270,7 +325,7 @@ async def _collect_ai_alerts(session: AsyncSession, tenant_id: UUID, limit: int 
 
 
 async def get_ai_overview(session: AsyncSession, tenant_id: UUID) -> AiOverviewResponse:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     since = now - timedelta(days=30)
     anomalies_count = await _count_recent_anomalies(session, tenant_id, since)
     forecast_summary = _summarize_forecast_log(await _get_latest_forecast_log(session, tenant_id))

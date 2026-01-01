@@ -4,8 +4,8 @@ import asyncio
 import logging
 import smtplib
 import ssl
+from collections.abc import Iterable, Sequence
 from email.message import EmailMessage
-from typing import Iterable, Sequence
 
 from app.config import get_settings
 from app.core.settings import Settings
@@ -56,13 +56,19 @@ def _send_sync(message: EmailMessage, settings: Settings) -> None:
         raise RuntimeError("EMAIL_SSL and EMAIL_TLS cannot both be enabled")
     use_ssl = bool(settings.email_ssl)
     context = ssl.create_default_context()
+    if not settings.email_host or settings.email_port is None:
+        raise RuntimeError("Email configuration is missing EMAIL_HOST/EMAIL_PORT")
+    host = settings.email_host
+    port = settings.email_port
 
     if use_ssl:
         client: smtplib.SMTP | smtplib.SMTP_SSL = smtplib.SMTP_SSL(
-            settings.email_host, settings.email_port, context=context
+            host,
+            port,
+            context=context,
         )
     else:
-        client = smtplib.SMTP(settings.email_host, settings.email_port)
+        client = smtplib.SMTP(host, port)
 
     with client as smtp:
         if not use_ssl and settings.email_tls:

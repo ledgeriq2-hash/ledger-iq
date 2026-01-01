@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime
-from decimal import Decimal
 import uuid
+from datetime import date, datetime
+from decimal import Decimal
 
-from sqlalchemy import DateTime, ForeignKey, Index, Numeric, String, text
+from sqlalchemy import Date, DateTime, ForeignKey, Index, Numeric, String, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -30,6 +30,7 @@ class Payment(BaseModel):
     method: Mapped[str] = mapped_column(String(50), nullable=False)
     reference: Mapped[str | None] = mapped_column(String(255), nullable=True)
     paid_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    event_date: Mapped[date] = mapped_column(Date, nullable=False, server_default=text("CURRENT_DATE"))
 
     invoice: Mapped[Invoice | None] = relationship("Invoice", lazy="joined")
     customer: Mapped[Customer] = relationship("Customer", lazy="joined")
@@ -38,6 +39,8 @@ class Payment(BaseModel):
         Index("ix_payments_tenant_id", "tenant_id"),
         Index("ix_payments_created_at", "created_at"),
         Index("ix_payments_customer_id", "customer_id"),
+        Index("ix_payments_event_date", "event_date"),
+        Index("ix_payments_tenant_event_date", "tenant_id", "event_date"),
     )
 
 

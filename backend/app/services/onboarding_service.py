@@ -76,7 +76,7 @@ async def create_sample_data(session: AsyncSession, tenant_id: UUID) -> dict[str
     customer = await customer_service.create_customer(
         session,
         tenant_id,
-        {"name": "Sample Customer", "email": "sample@ledger.test", "phone": "555-0101"},
+        {"code": "SAMPLE", "name": "Sample Customer", "email": "sample@ledger.test", "phone": "555-0101"},
     )
     product = await product_service.create_product(
         session,

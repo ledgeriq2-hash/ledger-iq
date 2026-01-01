@@ -1,3 +1,4 @@
+import asyncio
 import os
 import sys
 import uuid
@@ -8,18 +9,22 @@ from httpx import AsyncClient, ASGITransport
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy import types
 from sqlalchemy.ext.compiler import compiles
+from sqlalchemy.engine import make_url
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
+os.environ.setdefault("ENVIRONMENT", "test")
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///./test.db")
 os.environ.setdefault("FRONTEND_URL", "http://testserver")
+os.environ.setdefault("CSRF_ENABLED", "false")
 
-from app.database import Base, engine  # noqa: E402
+from app.database import Base, dispose_engine, engine  # noqa: E402
 from app.main import app  # noqa: E402
 import app.core.redis as redis_module  # noqa: E402
 from app.services import email_service  # noqa: E402
+from app.core.security import decode_token  # noqa: E402
 
 
 class DummyRedis:
@@ -107,15 +112,59 @@ async def setup_db():
     yield
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
-    db_path = Path("./test.db")
-    if db_path.exists():
-        db_path.unlink()
+    await dispose_engine()
+    url = make_url(os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///./test.db"))
+    if url.drivername.startswith("sqlite") and url.database:
+        db_path = Path(url.database)
+        if db_path.exists():
+            for _ in range(5):
+                try:
+                    db_path.unlink()
+                    break
+                except PermissionError:
+                    await asyncio.sleep(0.1)
 
 
 @pytest.fixture
 async def client():
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+
+    async def _ensure_tenant_headers(request):
+        path = (request.url.path or "").lower()
+        if not path.startswith("/api/"):
+            return
+        if path.startswith("/api/v1/auth/login"):
+            return
+
+        if "X-Tenant-Id" in request.headers:
+            return
+
+        auth_header = request.headers.get("Authorization", "")
+        token = None
+        if auth_header.lower().startswith("bearer "):
+            token = auth_header.split(" ", 1)[1].strip()
+
+        if token:
+            try:
+                payload = decode_token(token)
+                tenant_id = payload.get("tenant_id")
+                actor_id = payload.get("sub")
+                if tenant_id:
+                    request.headers["X-Tenant-Id"] = str(tenant_id)
+                if actor_id:
+                    request.headers["X-Actor-Id"] = str(actor_id)
+                return
+            except Exception:
+                # Fall through to dummy tenant header for endpoints where auth isn't required.
+                pass
+
+        request.headers["X-Tenant-Id"] = str(uuid.uuid4())
+
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test",
+        event_hooks={"request": [_ensure_tenant_headers]},
+    ) as ac:
         yield ac
 
 

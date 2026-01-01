@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import uuid
-from typing import Callable
+from collections.abc import Callable
 
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.core.logging import set_request_id, set_user_id
+from app.core.logging import set_actor_id, set_request_id, set_run_id, set_tenant_id, set_user_id
 
 
 class RequestIdMiddleware(BaseHTTPMiddleware):
@@ -16,6 +16,9 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
         request_id = request.headers.get("X-Request-ID") or str(uuid.uuid4())
         set_request_id(request_id)
         set_user_id(None)
+        set_tenant_id(None)
+        set_actor_id(None)
+        set_run_id(None)
         request.state.request_id = request_id
 
         response: Response = await call_next(request)

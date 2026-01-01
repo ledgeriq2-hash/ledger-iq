@@ -1,9 +1,5 @@
 from __future__ import annotations
 
-from __future__ import annotations
-
-from typing import Set
-
 from sqlalchemy import select
 
 from app.config import get_settings
@@ -11,7 +7,7 @@ from app.database import async_session_maker
 from app.models.tenant import Tenant
 from app.models.tenant_config import TenantConfig
 
-_soft_launch_cache: Set[str] = set()
+_soft_launch_cache: set[str] = set()
 
 
 def _all_soft_launch_slugs() -> set[str]:

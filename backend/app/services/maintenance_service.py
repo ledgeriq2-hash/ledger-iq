@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,7 +15,7 @@ async def cleanup_expired_data(
     error_event_retention_days: int,
 ) -> dict[str, str]:
     """Purge expired feedback and error events and commit within the service layer."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     feedback_cutoff = now - timedelta(days=max(feedback_retention_days, 1))
     error_cutoff = now - timedelta(days=max(error_event_retention_days, 1))
 

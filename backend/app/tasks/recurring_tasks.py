@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+
 from celery import shared_task
 
 from app.database import async_session_maker

@@ -2,25 +2,32 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import deps
 from app.core.permissions import ADMIN, OWNER, require_roles
 from app.models.user import User
-from app.schemas.user import UserCreate, UserPublic, UserUpdate
-from app.services import user_service, billing_service
+from app.schemas.user import UserCreate, UserList, UserPublic, UserUpdate
+from app.services import billing_service, user_service
+from app.utils.pagination import total_pages
 
 router = APIRouter(prefix="/users")
 
 
-@router.get("/", response_model=list[UserPublic])
+@router.get("/", response_model=UserList)
 async def list_users(
     session: AsyncSession = Depends(deps.get_db),
     tenant_id: UUID = Depends(deps.get_current_tenant),
     _: User = Depends(deps.get_current_active_user),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
 ):
-    return await user_service.list_users(session, tenant_id)
+    users, total = await user_service.list_users(
+        session, tenant_id, page=page, page_size=page_size, include_total=True
+    )
+    pages = total_pages(total, page_size)
+    return UserList(items=users, page=page, page_size=page_size, total=total, pages=pages)
 
 
 @router.get("/{user_id}", response_model=UserPublic)

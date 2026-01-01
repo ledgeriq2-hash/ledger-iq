@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List
 from uuid import UUID
 
 from pydantic import Field, field_validator
 
 from app.schemas.common import BaseSchema, IDTimestampMixin
-from app.schemas.invoice import InvoiceCreate, InvoicePublic
 from app.schemas.customer import CustomerPublic
+from app.schemas.invoice import InvoiceCreate
 
 ALLOWED_FREQUENCIES = {"daily", "weekly", "monthly", "custom"}
 
@@ -68,7 +67,7 @@ class RecurringInvoicePublic(IDTimestampMixin, RecurringInvoiceBase):
 
 
 class RecurringInvoiceList(BaseSchema):
-    items: List[RecurringInvoicePublic]
+    items: list[RecurringInvoicePublic]
     page: int = 1
     page_size: int = 50
     total: int = 0

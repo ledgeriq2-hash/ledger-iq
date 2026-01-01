@@ -12,7 +12,11 @@ def auth_headers(token: str) -> dict[str, str]:
 
 @pytest.mark.anyio
 async def test_wrong_credentials(client: AsyncClient):
-    res = await client.post("/api/v1/auth/login", json={"email": "none@example.com", "password": "bad", "tenant": "none"})
+    res = await client.post(
+        "/api/v1/auth/login",
+        json={"email": "none@example.com", "password": "bad", "tenant": "none"},
+        headers={"X-Tenant-Id": str(uuid.uuid4())},
+    )
     assert res.status_code in (400, 401, 403, 404)
 
 

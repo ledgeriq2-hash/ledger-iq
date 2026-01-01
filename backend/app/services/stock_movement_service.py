@@ -1,17 +1,18 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from decimal import Decimal
-from typing import Any, Sequence
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.core.exceptions import AppException
 from app.models.product import Product
 from app.models.stock_movement import MovementType, ReferenceType, StockMovement
 from app.schemas.stock_movement import InventorySummaryItem
-from app.config import get_settings
 
 settings = get_settings()
 
@@ -93,7 +94,9 @@ async def create_movement(
     if not product:
         raise AppException(code="product_not_found", message="Product not found", http_status=404)
 
-    await _apply_stock_change(product, movement_type, quantity)
+    skip_stock = bool(getattr(product, "is_service", False))
+    if not skip_stock:
+        await _apply_stock_change(product, movement_type, quantity)
 
     ref_type = ReferenceType(data["reference_type"]) if data.get("reference_type") else None
 
@@ -175,7 +178,7 @@ async def summarize_inventory(session: AsyncSession, tenant_id: UUID) -> tuple[l
     return items, total_value
 
 
-async def apply_invoice_movements(session: AsyncSession, tenant_id: UUID, invoice) -> None:
+async def apply_invoice_movements(session: AsyncSession, tenant_id: UUID, invoice, *, commit: bool = True) -> None:
     """
     Create OUT movements for invoice items with products.
     """
@@ -196,7 +199,10 @@ async def apply_invoice_movements(session: AsyncSession, tenant_id: UUID, invoic
             },
             commit=False,
         )
-    await session.commit()
+    if commit:
+        await session.commit()
+    else:
+        await session.flush()
 
 
 __all__ = [

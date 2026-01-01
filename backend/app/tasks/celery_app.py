@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-
 from celery import Celery
 
 from app.config import get_settings
@@ -21,6 +19,7 @@ celery_app = Celery(
         "app.tasks.ai_tasks",
         "app.tasks.cleanup_tasks",
         "app.tasks.recurring_tasks",
+        "app.tasks.gdpr_tasks",
     ],
 )
 

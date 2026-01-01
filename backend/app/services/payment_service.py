@@ -1,16 +1,19 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from decimal import Decimal
 from typing import Any, Sequence
 from uuid import UUID
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.exceptions import AppException
 from app.metrics import PAYMENTS_CREATED
 from app.models.payment import Payment
-from app.services import journal_service, usage_service
-from app.services.accounting_mapping import get_account_mapping
+from app.accounting.dto import RecordFinancialTransactionInput
+from app.services import treasury_service, usage_service
+from app.services.accounting_mapping import ACCOUNT_MAPPING_REQUIREMENTS, validate_tenant_account_mapping
 
 
 def _to_dict(payload: Any, *, exclude_unset: bool = False) -> dict[str, Any]:
@@ -21,51 +24,113 @@ def _to_dict(payload: Any, *, exclude_unset: bool = False) -> dict[str, Any]:
     raise TypeError("payload must be a mapping or pydantic model")
 
 
-async def _load_payment_account_mapping(session: AsyncSession, tenant_id: UUID) -> dict[str, UUID | None]:
-    mapping = await get_account_mapping(session, tenant_id)
-    return {
-        "cash": mapping.get("cash_account_id"),
-        "accounts_receivable": mapping.get("accounts_receivable_account_id"),
-    }
+@asynccontextmanager
+async def _transaction_scope(session: AsyncSession):
+    if session.in_transaction():
+        await session.rollback()
+    async with session.begin():
+        yield
 
 
-async def _post_payment_entry(session: AsyncSession, tenant_id: UUID, payment: Payment) -> None:
-    mapping = await _load_payment_account_mapping(session, tenant_id)
-    cash_account = mapping.get("cash")
-    ar_account = mapping.get("accounts_receivable")
-    if not cash_account or not ar_account:
-        return
-
-    amount = Decimal(str(payment.amount or 0))
+async def _post_payment_entry(
+    session: AsyncSession,
+    tenant_id: UUID,
+    payment: Payment,
+    actor_id: UUID | None,
+    *,
+    commit: bool = False,
+) -> None:
+    amount = Decimal(str(payment.amount or 0)).quantize(Decimal("0.01"))
     if amount <= 0:
         return
 
-    payment_date = (
-        payment.paid_at.date()
-        if payment.paid_at
-        else (payment.created_at.date() if hasattr(payment, "created_at") and payment.created_at else None)
-    )
-    lines = [
-        {
-            "account_id": cash_account,
-            "debit": amount,
-            "credit": Decimal("0"),
-            "line_description": f"Payment {payment.id} receipt",
-        },
-        {
-            "account_id": ar_account,
-            "debit": Decimal("0"),
-            "credit": amount,
-            "line_description": f"Payment {payment.id} applied to receivable",
-        },
-    ]
-    await journal_service.create_journal_entry_with_lines(
-        session=session,
-        tenant_id=tenant_id,
-        date=payment_date or payment.created_at.date(),
+    payment_date = getattr(payment, "event_date", None)
+    if not payment_date:
+        payment_date = (
+            payment.paid_at.date()
+            if payment.paid_at
+            else (payment.created_at.date() if hasattr(payment, "created_at") and payment.created_at else None)
+        )
+    await treasury_service.create_receipt(
+        session,
+        tenant_id,
+        amount=amount,
+        customer_id=payment.customer_id,
+        reference_type="payment",
+        reference_id=payment.id,
         description=f"Payment {payment.id} receipt",
-        reference=str(payment.id),
-        lines=lines,
+        entry_date=payment_date or payment.created_at.date(),
+        actor_id=actor_id,
+        treasury_id=None,
+        commit=commit,
+    )
+
+
+async def _post_payment_adjustment_entry(
+    session: AsyncSession,
+    tenant_id: UUID,
+    payment: Payment,
+    amount: Decimal,
+    reason: str | None,
+    actor_id: UUID | None,
+    *,
+    commit: bool = False,
+) -> None:
+    mapping = await validate_tenant_account_mapping(
+        session,
+        tenant_id,
+        ACCOUNT_MAPPING_REQUIREMENTS["payment_adjustment"],
+    )
+    expense_account = mapping.get("expense")
+    suspense_account = mapping.get("payables")
+
+    delta = Decimal(str(amount or 0)).quantize(Decimal("0.01"))
+    if delta <= 0:
+        return
+
+    payment_date = getattr(payment, "event_date", None)
+    if not payment_date:
+        payment_date = (
+            payment.paid_at.date()
+            if payment.paid_at
+            else (payment.created_at.date() if hasattr(payment, "created_at") and payment.created_at else None)
+        )
+    note = f": {reason}" if reason else ""
+    description = f"Payment {payment.id} adjustment{note}"
+    await record_financial_transaction(
+        session,
+        RecordFinancialTransactionInput(
+            tenant_id=tenant_id,
+            actor_id=actor_id,
+            date=payment_date or payment.created_at.date(),
+            description=description,
+            reference_type="payment_adjustment",
+            reference_id=payment.id,
+            lines=[
+                {
+                    "account_id": expense_account,
+                    "debit": delta,
+                    "credit": Decimal("0"),
+                    "entity_type": "client",
+                    "entity_id": payment.customer_id,
+                    "reference_type": "payment_adjustment",
+                    "reference_id": payment.id,
+                    "description": description,
+                },
+                {
+                    "account_id": suspense_account,
+                    "debit": Decimal("0"),
+                    "credit": delta,
+                    "entity_type": "client",
+                    "entity_id": payment.customer_id,
+                    "reference_type": "payment_adjustment",
+                    "reference_id": payment.id,
+                    "description": description,
+                },
+            ],
+            treasury_movement=None,
+        ),
+        commit=commit,
     )
 
 
@@ -105,18 +170,21 @@ async def list_payments_for_customer(
     return result.scalars().all()
 
 
-async def create_payment(session: AsyncSession, tenant_id: UUID, payload: Any) -> Payment:
+async def create_payment(
+    session: AsyncSession, tenant_id: UUID, payload: Any, *, actor_id: UUID | None = None
+) -> Payment:
     data = _to_dict(payload)
     payment = Payment(**data, tenant_id=tenant_id)
-    session.add(payment)
-    await session.commit()
+    async with _transaction_scope(session):
+        session.add(payment)
+        await session.flush()
+        try:
+            PAYMENTS_CREATED.labels(tenant_id=str(tenant_id)).inc()
+        except Exception:
+            pass
+        await _post_payment_entry(session, tenant_id, payment, actor_id, commit=False)
+        await usage_service.record_payment_created(session, tenant_id, commit=False)
     await session.refresh(payment)
-    try:
-        PAYMENTS_CREATED.labels(tenant_id=str(tenant_id)).inc()
-    except Exception:
-        pass
-    await _post_payment_entry(session, tenant_id, payment)
-    await usage_service.record_payment_created(session, tenant_id)
     return payment
 
 
@@ -136,12 +204,40 @@ async def update_payment(
     return payment
 
 
+async def adjust_payment(
+    session: AsyncSession,
+    tenant_id: UUID,
+    payment_id: UUID,
+    payload: Any,
+    *,
+    actor_id: UUID | None = None,
+) -> Payment | None:
+    data = _to_dict(payload)
+    delta = Decimal(str(data.get("amount") or 0)).quantize(Decimal("0.01"))
+    reason = data.get("reason")
+    if delta <= 0:
+        raise AppException(code="adjustment_amount_invalid", message="Adjustment must be greater than zero", http_status=422)
+
+    async with _transaction_scope(session):
+        payment = await get_payment(session, tenant_id, payment_id)
+        if not payment:
+            return None
+        await _post_payment_adjustment_entry(
+            session,
+            tenant_id,
+            payment,
+            delta,
+            reason,
+            actor_id,
+            commit=False,
+        )
+    await session.refresh(payment)
+    return payment
+
+
 async def delete_payment(session: AsyncSession, tenant_id: UUID, payment_id: UUID) -> bool:
-    result = await session.execute(
-        delete(Payment).where(Payment.id == payment_id, Payment.tenant_id == tenant_id)
-    )
-    await session.commit()
-    return result.rowcount > 0
+    _ = session, tenant_id, payment_id
+    raise AppException(code="deletes_disabled", message="Deleting payments is disabled", http_status=405)
 
 
 __all__ = [
@@ -150,5 +246,6 @@ __all__ = [
     "get_payment",
     "create_payment",
     "update_payment",
+    "adjust_payment",
     "delete_payment",
 ]

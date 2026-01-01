@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Callable
+from collections.abc import Callable
 
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -22,7 +22,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         start = time.perf_counter()
         request_id = request_id_ctx_var.get()
-        tenant_id = getattr(request.state, "tenant_id", None) or request.headers.get("X-Tenant-ID")
+        tenant_id = getattr(request.state, "tenant_id", None) or request.headers.get("X-Tenant-Id")
         tenant_slug = request.headers.get("X-Tenant-Slug")
         soft_launch = is_soft_launch_tenant(tenant_slug)
         user_id = user_id_ctx_var.get()
@@ -51,8 +51,15 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
             if soft_launch:
                 try:
                     SOFT_LAUNCH_REQUESTS.labels(path=request.url.path).inc()
-                except Exception:
-                    pass
+                except Exception as exc:
+                    logger.warning(
+                        "soft_launch_metric_failed",
+                        extra={
+                            "request_id": request_id,
+                            "path": request.url.path,
+                            "reason": str(exc),
+                        },
+                    )
             logger.info(
                 "request.complete",
                 extra={
@@ -80,9 +87,17 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                             error_message=f"HTTP {status_code}",
                         )
                     request.state.error_event_recorded = True
-                except Exception:
+                except Exception as exc:
                     # Avoid masking request handling in case of logging persistence issues.
-                    pass
+                    logger.warning(
+                        "error_event_record_failed",
+                        extra={
+                            "request_id": request_id,
+                            "path": request.url.path,
+                            "status_code": status_code,
+                            "reason": str(exc),
+                        },
+                    )
 
 
 __all__ = ["RequestLoggingMiddleware"]

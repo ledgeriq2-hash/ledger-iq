@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, List
+from typing import Any
 from uuid import UUID
 
 from app.schemas.common import BaseSchema, IDTimestampMixin
@@ -30,7 +30,7 @@ class ReportCachePublic(IDTimestampMixin, ReportCacheBase):
 
 
 class ReportCacheList(BaseSchema):
-    items: List[ReportCachePublic]
+    items: list[ReportCachePublic]
 
 
 class ReportRequest(BaseSchema):

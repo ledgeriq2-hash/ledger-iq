@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from celery import shared_task
 
-from app.tasks.celery_app import celery_app
-from app.ai.forecast import generate_forecast
 from app.ai.anomaly import detect_anomalies
+from app.ai.forecast import generate_forecast
 
 
 @shared_task(name="app.tasks.ai_tasks.generate_forecast_task")

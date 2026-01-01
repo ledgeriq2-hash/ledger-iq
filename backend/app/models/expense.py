@@ -1,8 +1,8 @@
 from __future__ import annotations
 
+import uuid
 from datetime import date
 from decimal import Decimal
-import uuid
 
 from sqlalchemy import Date, ForeignKey, Index, Numeric, String, Text, text
 from sqlalchemy.dialects.postgresql import UUID
@@ -24,6 +24,7 @@ class Expense(BaseModel):
     amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False, server_default=text("0"))
     currency: Mapped[str] = mapped_column(String(10), nullable=False)
     expense_date: Mapped[date] = mapped_column(Date, nullable=False)
+    event_date: Mapped[date] = mapped_column(Date, nullable=False, server_default=text("CURRENT_DATE"))
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     supplier: Mapped[Supplier] = relationship("Supplier", lazy="joined")
@@ -33,6 +34,7 @@ class Expense(BaseModel):
         Index("ix_expenses_created_at", "created_at"),
         Index("ix_expenses_supplier_id", "supplier_id"),
         Index("ix_expenses_expense_date", "expense_date"),
+        Index("ix_expenses_event_date", "event_date"),
     )
 
 

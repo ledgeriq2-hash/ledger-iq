@@ -1,25 +1,29 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
-from typing import List
+from typing import Any
 from uuid import UUID
 
+from pydantic import Field
+
+from app.core.pagination import PaginatedResponse
 from app.schemas.common import BaseSchema
 from app.schemas.customer import CustomerPublic
 from app.schemas.invoice import InvoicePublic
 from app.schemas.payment import PaymentPublic
-from app.schemas.supplier import SupplierPublic
 
 
-class PortalSettings(BaseSchema):
-    notifications: bool = True
-    language: str = "en"
+class PortalLinkRequest(BaseSchema):
+    client_id: UUID
+    expires_in: int | None = None  # seconds
 
 
-class PortalSettingsUpdate(BaseSchema):
-    notifications: bool | None = None
-    language: str | None = None
+class PortalLinkResponse(BaseSchema):
+    success: bool = True
+    url: str
+    expires_at: datetime | None = None
+    token_id: UUID | None = None
 
 
 class PortalActivityItem(BaseSchema):
@@ -29,68 +33,46 @@ class PortalActivityItem(BaseSchema):
     timestamp: str
 
 
-class PortalOrder(BaseSchema):
-    id: UUID
-    reference: str | None = None
-    status: str | None = None
-    total_amount: Decimal
-    currency: str
-    order_date: date | None = None
-    description: str | None = None
+class PortalSummaryStats(BaseSchema):
+    open_invoices: int = 0
+    total_open_amount: Decimal = Decimal("0.00")
 
 
-class PortalSupplierPayment(BaseSchema):
-    id: UUID
-    reference: str | None = None
-    amount: Decimal
-    currency: str
-    paid_at: str | None = None
-    status: str | None = None
-    description: str | None = None
+class PortalSummaryResponse(BaseSchema):
+    client: CustomerPublic
+    recent_activity: list[PortalActivityItem] = Field(default_factory=list)
+    stats: PortalSummaryStats = Field(default_factory=PortalSummaryStats)
 
 
-class CustomerInvoicesResponse(BaseSchema):
-    invoices: List[InvoicePublic]
+class PortalBalanceResponse(BaseSchema):
+    client_id: UUID
+    as_of_date: date
+    balance: Decimal
 
 
-class CustomerPaymentsResponse(BaseSchema):
-    payments: List[PaymentPublic]
+class PortalInvoicesResponse(PaginatedResponse[InvoicePublic]):
+    items: list[InvoicePublic] = Field(..., alias="invoices")
+    model_config = {"from_attributes": True, "populate_by_name": True}
 
 
-class SupplierOrdersResponse(BaseSchema):
-    orders: List[PortalOrder]
+class PortalPaymentsResponse(PaginatedResponse[PaymentPublic]):
+    items: list[PaymentPublic] = Field(..., alias="payments")
+    model_config = {"from_attributes": True, "populate_by_name": True}
 
 
-class SupplierPaymentsResponse(BaseSchema):
-    payments: List[PortalSupplierPayment]
-
-
-class CustomerPortalResponse(BaseSchema):
-    customer: CustomerPublic
-    invoices: List[InvoicePublic]
-    payments: List[PaymentPublic]
-    settings: PortalSettings
-    recent_activity: List[PortalActivityItem]
-
-
-class SupplierPortalResponse(BaseSchema):
-    supplier: SupplierPublic
-    orders: List[PortalOrder]
-    payments: List[PortalSupplierPayment]
-    settings: PortalSettings
-    recent_activity: List[PortalActivityItem]
+class PortalStatementResponse(BaseSchema):
+    statement: dict[str, Any]
 
 
 __all__ = [
-    "PortalSettings",
-    "PortalSettingsUpdate",
+    "PortalLinkRequest",
+    "PortalLinkResponse",
     "PortalActivityItem",
-    "PortalOrder",
-    "PortalSupplierPayment",
-    "CustomerInvoicesResponse",
-    "CustomerPaymentsResponse",
-    "SupplierOrdersResponse",
-    "SupplierPaymentsResponse",
-    "CustomerPortalResponse",
-    "SupplierPortalResponse",
+    "PortalSummaryStats",
+    "PortalSummaryResponse",
+    "PortalBalanceResponse",
+    "PortalInvoicesResponse",
+    "PortalPaymentsResponse",
+    "PortalStatementResponse",
 ]
+

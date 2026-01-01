@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, UTC
 from uuid import UUID
 
 import pytest
@@ -29,7 +29,7 @@ async def test_recurring_invoice_run_now(client: AsyncClient, register_owner):
 
     cust_res = await client.post(
         "/api/v1/customers/",
-        json={"name": "Recurring Co", "email": "rec@example.com"},
+        json={"code": "RECUR-001", "name": "Recurring Co", "email": "rec@example.com"},
         headers=headers,
     )
     assert cust_res.status_code == 201, cust_res.text
@@ -68,13 +68,75 @@ async def test_recurring_invoice_run_now(client: AsyncClient, register_owner):
 
 
 @pytest.mark.anyio
+async def test_recurring_invoice_run_now_with_frozen_clock(monkeypatch, client: AsyncClient, register_owner):
+    owner = await register_owner()
+    headers = auth_headers(owner["tokens"]["access_token"])
+
+    fake_now = datetime(2025, 1, 1, 10, 0, tzinfo=UTC)
+
+    class FrozenDate(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            if tz:
+                return fake_now
+            return fake_now.replace(tzinfo=None)
+
+    class FrozenDateOnly(date):
+        @classmethod
+        def today(cls):
+            return fake_now.date()
+
+    monkeypatch.setattr(recurring_invoice_service, "datetime", FrozenDate)
+    monkeypatch.setattr(recurring_invoice_service, "date", FrozenDateOnly)
+
+    cust_res = await client.post(
+        "/api/v1/customers/",
+        json={"code": "FROZEN-001", "name": "Frozen Co", "email": "frozen@example.com"},
+        headers=headers,
+    )
+    assert cust_res.status_code == 201, cust_res.text
+    customer = cust_res.json()
+
+    payload = {
+        "customer_id": customer["id"],
+        "frequency": "weekly",
+        "interval": 1,
+        "next_run_at": fake_now.isoformat(),
+        "template": {
+            "customer_id": customer["id"],
+            "issue_date": fake_now.date().isoformat(),
+            "currency": "USD",
+            "status": "SENT",
+            "items": [{"description": "Frozen", "quantity": "1", "unit_price": "10.00", "tax_rate": "0"}],
+        },
+    }
+
+    rec_res = await client.post("/api/v1/recurring-invoices/", json=payload, headers=headers)
+    assert rec_res.status_code == 201, rec_res.text
+    rec_id = rec_res.json()["id"]
+
+    run_res = await client.post(f"/api/v1/recurring-invoices/{rec_id}/run", headers=headers)
+    assert run_res.status_code == 200, run_res.text
+    invoice = run_res.json()
+    assert invoice["customer_id"] == customer["id"]
+    assert datetime.fromisoformat(invoice["issue_date"]).date() == fake_now.date()
+
+    rec_after = await client.get(f"/api/v1/recurring-invoices/{rec_id}", headers=headers)
+    assert rec_after.status_code == 200
+    data_after = rec_after.json()
+    assert datetime.fromisoformat(data_after["last_run_at"]) == fake_now.replace(tzinfo=None)
+    expected_next = (fake_now + timedelta(days=7)).replace(tzinfo=None)
+    assert datetime.fromisoformat(data_after["next_run_at"]) == expected_next
+
+
+@pytest.mark.anyio
 async def test_recurring_invoice_tenant_isolation(client: AsyncClient, register_owner):
     owner1 = await register_owner()
     owner2 = await register_owner()
 
     cust_res = await client.post(
         "/api/v1/customers/",
-        json={"name": "Tenant One", "email": "one@example.com"},
+        json={"code": "TENANT-ONE", "name": "Tenant One", "email": "one@example.com"},
         headers=auth_headers(owner1["tokens"]["access_token"]),
     )
     assert cust_res.status_code == 201, cust_res.text
@@ -108,7 +170,7 @@ async def test_process_due_recurring_invoices_handles_monthly_rollover(client: A
 
     cust_res = await client.post(
         "/api/v1/customers/",
-        json={"name": "Monthly Co", "email": "monthly@example.com"},
+        json={"code": "MONTHLY-001", "name": "Monthly Co", "email": "monthly@example.com"},
         headers=headers,
     )
     assert cust_res.status_code == 201, cust_res.text
@@ -134,7 +196,7 @@ async def test_process_due_recurring_invoices_handles_monthly_rollover(client: A
                 "frequency": "monthly",
                 "interval": 1,
                 "day_of_month": 31,
-                "next_run_at": datetime.now(timezone.utc) - timedelta(days=1),
+                "next_run_at": datetime.now(UTC) - timedelta(days=1),
                 "template": template,
             },
         )
@@ -159,7 +221,7 @@ async def test_celery_task_runs_due(client: AsyncClient, register_owner):
 
     cust_res = await client.post(
         "/api/v1/customers/",
-        json={"name": "Task Co", "email": "task@example.com"},
+        json={"code": "TASK-001", "name": "Task Co", "email": "task@example.com"},
         headers=headers,
     )
     assert cust_res.status_code == 201, cust_res.text
@@ -182,7 +244,7 @@ async def test_celery_task_runs_due(client: AsyncClient, register_owner):
                 "customer_id": customer["id"],
                 "frequency": "daily",
                 "interval": 1,
-                "next_run_at": datetime.now(timezone.utc) - timedelta(minutes=5),
+                "next_run_at": datetime.now(UTC) - timedelta(minutes=5),
                 "template": template,
             },
         )

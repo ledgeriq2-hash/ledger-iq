@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
-from typing import List
 from uuid import UUID
 
 from pydantic import field_validator
@@ -41,16 +40,37 @@ class PaymentUpdate(BaseSchema):
     paid_at: datetime | None = None
 
 
+class PaymentAdjustmentCreate(BaseSchema):
+    amount: Decimal
+    reason: str | None = None
+
+    @field_validator("amount")
+    @classmethod
+    def amount_positive(cls, v: Decimal) -> Decimal:
+        if v is None:
+            raise ValueError("amount is required")
+        if Decimal(v) <= 0:
+            raise ValueError("amount must be greater than zero")
+        return Decimal(v)
+
+
 class PaymentPublic(IDTimestampMixin, PaymentBase):
     id: UUID
 
 
 class PaymentList(BaseSchema):
-    items: List[PaymentPublic]
+    items: list[PaymentPublic]
     page: int = 1
     page_size: int = 50
     total: int = 0
     pages: int = 0
 
 
-__all__ = ["PaymentBase", "PaymentCreate", "PaymentUpdate", "PaymentPublic", "PaymentList"]
+__all__ = [
+    "PaymentBase",
+    "PaymentCreate",
+    "PaymentUpdate",
+    "PaymentAdjustmentCreate",
+    "PaymentPublic",
+    "PaymentList",
+]

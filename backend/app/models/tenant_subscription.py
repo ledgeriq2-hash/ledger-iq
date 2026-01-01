@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, Index, String, UniqueConstraint, JSON
+from sqlalchemy import JSON, Boolean, DateTime, Index, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import BaseModel
@@ -25,6 +25,7 @@ class TenantSubscription(BaseModel):
         UniqueConstraint("tenant_id", name="uq_tenant_subscriptions_tenant"),
         Index("ix_tenant_subscriptions_plan_code", "plan_code"),
         Index("ix_tenant_subscriptions_stripe_customer", "stripe_customer_id"),
+        Index("ix_tenant_subscriptions_tenant_created", "tenant_id", "created_at"),
     )
 
 

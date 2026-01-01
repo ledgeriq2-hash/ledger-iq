@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import List
 from uuid import UUID
 
 from pydantic import Field, field_validator
@@ -39,7 +38,7 @@ class StockMovementPublic(IDTimestampMixin, StockMovementBase):
 
 
 class StockMovementList(BaseSchema):
-    items: List[StockMovementPublic]
+    items: list[StockMovementPublic]
     page: int = 1
     page_size: int = 50
     total: int = 0
@@ -56,7 +55,7 @@ class InventorySummaryItem(BaseSchema):
 
 
 class InventorySummaryResponse(BaseSchema):
-    items: List[InventorySummaryItem]
+    items: list[InventorySummaryItem]
     total_value: Decimal
 
 

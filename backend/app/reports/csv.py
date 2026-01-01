@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import csv
 import io
-from typing import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 
 
 def export_csv(rows: Iterable[Mapping[str, object]], fieldnames: Sequence[str] | None = None) -> str:

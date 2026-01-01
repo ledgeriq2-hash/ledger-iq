@@ -3,7 +3,8 @@ from __future__ import annotations
 import uuid
 from enum import Enum
 
-from sqlalchemy import Boolean, Enum as SqlEnum, ForeignKey, Index, String, text
+from sqlalchemy import Boolean, ForeignKey, Index, String, text
+from sqlalchemy import Enum as SqlEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 

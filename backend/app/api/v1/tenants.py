@@ -2,25 +2,32 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import deps
 from app.core.permissions import ADMIN, OWNER, require_roles
 from app.models.user import User
-from app.schemas.tenant import TenantCreate, TenantPublic, TenantUpdate
+from app.schemas.tenant import TenantCreate, TenantList, TenantPublic, TenantUpdate
 from app.services import tenant_service
+from app.utils.pagination import total_pages
 
 router = APIRouter(prefix="/tenants")
 
 
-@router.get("/", response_model=list[TenantPublic])
+@router.get("/", response_model=TenantList)
 async def list_tenants(
     session: AsyncSession = Depends(deps.get_db),
     tenant_scope: UUID | None = Depends(deps.get_current_tenant),
     _: User = Depends(deps.get_current_active_user),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(25, ge=1, le=100),
 ):
-    return await tenant_service.list_tenants(session, tenant_scope)
+    tenants, total = await tenant_service.list_tenants(
+        session, tenant_scope, page=page, page_size=page_size, include_total=True
+    )
+    pages = total_pages(total, page_size)
+    return TenantList(items=tenants, page=page, page_size=page_size, total=total, pages=pages)
 
 
 @router.get("/{tenant_id}", response_model=TenantPublic)

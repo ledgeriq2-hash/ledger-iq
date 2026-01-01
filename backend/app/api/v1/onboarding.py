@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import deps
-from app.core.permissions import ADMIN, OWNER, require_roles
 from app.core.exceptions import AppException
+from app.core.permissions import ADMIN, OWNER, require_roles
 from app.schemas.common import BaseSchema
 from app.services import onboarding_service
 
@@ -54,7 +54,7 @@ async def create_sample_data(
     try:
         return await onboarding_service.create_sample_data(session, tenant_id)
     except AppException as exc:
-        raise HTTPException(status_code=exc.http_status, detail=exc.message)
+        raise HTTPException(status_code=exc.http_status, detail=exc.message) from exc
 
 
 __all__ = ["router"]

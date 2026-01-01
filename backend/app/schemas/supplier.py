@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 from decimal import Decimal
-from typing import List
 from uuid import UUID
 
+from app.core.pagination import PaginatedResponse
 from app.schemas.common import BaseSchema, IDTimestampMixin
 
 
@@ -35,8 +35,8 @@ class SupplierPublic(IDTimestampMixin, SupplierBase):
     id: UUID
 
 
-class SupplierList(BaseSchema):
-    items: List[SupplierPublic]
+class SupplierList(PaginatedResponse[SupplierPublic]):
+    pass
 
 
 __all__ = ["SupplierBase", "SupplierCreate", "SupplierUpdate", "SupplierPublic", "SupplierList"]

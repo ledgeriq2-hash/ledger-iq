@@ -1,16 +1,18 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import hashlib
-from typing import Any, Sequence
+from collections.abc import Sequence
+from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.security import get_password_hash, verify_password, enforce_password_policy
+from app.core.security import enforce_password_policy, get_password_hash, verify_password
 from app.models.refresh_token import RefreshToken
 from app.models.user import User
+from app.utils.pagination import normalize_pagination
 
 
 def _to_dict(payload: Any, *, exclude_unset: bool = False) -> dict[str, Any]:
@@ -21,9 +23,24 @@ def _to_dict(payload: Any, *, exclude_unset: bool = False) -> dict[str, Any]:
     raise TypeError("payload must be a mapping or pydantic model")
 
 
-async def list_users(session: AsyncSession, tenant_id: UUID) -> Sequence[User]:
-    result = await session.execute(select(User).where(User.tenant_id == tenant_id))
-    return result.scalars().all()
+async def list_users(
+    session: AsyncSession,
+    tenant_id: UUID,
+    page: int | None = None,
+    page_size: int | None = None,
+    include_total: bool = False,
+) -> Sequence[User] | tuple[list[User], int]:
+    base = select(User).where(User.tenant_id == tenant_id).order_by(User.created_at.desc())
+    if page is None and page_size is None and not include_total:
+        result = await session.execute(base)
+        return result.scalars().all()
+    page, page_size, offset = normalize_pagination(page, page_size)
+    result = await session.execute(base.offset(offset).limit(page_size))
+    items = result.scalars().all()
+    if not include_total:
+        return items
+    total = await session.scalar(select(func.count()).select_from(User).where(User.tenant_id == tenant_id)) or 0
+    return items, total
 
 
 async def get_user(session: AsyncSession, tenant_id: UUID, user_id: UUID) -> User | None:
@@ -91,7 +108,7 @@ async def set_last_login(session: AsyncSession, tenant_id: UUID, user_id: UUID) 
     user = await get_user(session, tenant_id, user_id)
     if not user:
         return
-    user.last_login_at = datetime.now(timezone.utc)
+    user.last_login_at = datetime.now(UTC)
     await session.commit()
 
 
@@ -126,7 +143,7 @@ async def store_refresh_token(
 async def get_valid_refresh_token(
     session: AsyncSession, tenant_id: UUID, user_id: UUID, refresh_token: str, now: datetime | None = None
 ) -> RefreshToken | None:
-    now = now or datetime.now(timezone.utc)
+    now = now or datetime.now(UTC)
     result = await session.execute(
         select(RefreshToken).where(
             RefreshToken.token_hash == _hash_token(refresh_token),

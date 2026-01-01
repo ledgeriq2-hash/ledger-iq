@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from decimal import Decimal
 import uuid
+from datetime import date
+from decimal import Decimal
 from enum import Enum
 
-from sqlalchemy import Enum as SqlEnum, ForeignKey, Index, Numeric, String
+from sqlalchemy import Enum as SqlEnum
+from sqlalchemy import Date, ForeignKey, Index, Numeric, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -42,12 +44,14 @@ class StockMovement(BaseModel):
         nullable=True,
     )
     reference_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    event_date: Mapped[date] = mapped_column(Date, nullable=False, server_default=text("CURRENT_DATE"))
 
     product: Mapped[Product] = relationship("Product", lazy="joined")
 
     __table_args__ = (
         Index("ix_stock_movements_tenant_id", "tenant_id"),
         Index("ix_stock_movements_created_at", "created_at"),
+        Index("ix_stock_movements_event_date", "event_date"),
         Index("ix_stock_movements_product_id", "product_id"),
     )
 

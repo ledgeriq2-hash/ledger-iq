@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from math import sqrt
 from statistics import mean, pstdev
-from typing import Sequence
 
 
 def moving_average(data: Sequence[float], window: int) -> list[float]:
@@ -50,14 +49,14 @@ def exponential_smoothing(series: Sequence[float], alpha: float) -> list[float]:
 def rmse(actual: Sequence[float], predicted: Sequence[float]) -> float | None:
     if not actual or not predicted or len(actual) != len(predicted):
         return None
-    return sqrt(sum((a - p) ** 2 for a, p in zip(actual, predicted)) / len(actual))
+    return sqrt(sum((a - p) ** 2 for a, p in zip(actual, predicted, strict=True)) / len(actual))
 
 
 def mape(actual: Sequence[float], predicted: Sequence[float]) -> float | None:
     if not actual or not predicted or len(actual) != len(predicted):
         return None
     errors = []
-    for a, p in zip(actual, predicted):
+    for a, p in zip(actual, predicted, strict=True):
         if a == 0:
             continue
         errors.append(abs((a - p) / a))
@@ -74,7 +73,10 @@ def rolling_z_scores(series: Sequence[float], window: int, eps: float = 1e-8) ->
     scores: list[float] = []
     for idx, value in enumerate(series):
         start = max(0, idx - window + 1)
-        window_slice = series[start : idx + 1]
+        window_slice = series[start:idx]
+        if len(window_slice) < 2:
+            scores.append(0.0)
+            continue
         mu = mean(window_slice)
         sigma = pstdev(window_slice) or eps
         scores.append((value - mu) / sigma)

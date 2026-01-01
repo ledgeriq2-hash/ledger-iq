@@ -6,7 +6,6 @@ from uuid import UUID
 
 from fastapi import status
 from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -19,17 +18,10 @@ from app.models.stripe_event import StripeEvent
 from app.models.tenant import Tenant
 from app.models.tenant_subscription import TenantSubscription
 from app.models.user import User
+from app.services import stripe_service
 
 
-def _get_stripe(settings):
-    try:
-        import stripe
-    except Exception:
-        return None
-    if not settings.stripe_api_key:
-        return None
-    stripe.api_key = settings.stripe_api_key
-    return stripe
+_get_stripe = stripe_service.get_stripe_client
 
 
 async def ensure_default_plans(session: AsyncSession, settings=None) -> None:
@@ -272,34 +264,15 @@ async def create_customer_portal_session(
 
 async def handle_webhook_event(session: AsyncSession, payload: bytes, signature: str | None, settings=None) -> dict:
     settings = settings or get_settings()
-    stripe_client = _get_stripe(settings)
-    event: dict[str, Any] | None = None
-    if not stripe_client or not settings.stripe_webhook_secret:
-        raise AppException(
-            "stripe_not_configured",
-            "Stripe webhook secret not configured",
-            http_status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        )
-    try:
-        event = stripe_client.Webhook.construct_event(payload, signature, settings.stripe_webhook_secret)
-    except Exception as exc:
-        raise AppException("invalid_webhook_signature", str(exc), http_status=status.HTTP_400_BAD_REQUEST) from exc
+    event, idempotent, event_type = await stripe_service.verify_and_record_webhook(
+        session, payload, signature, settings=settings
+    )
+    if idempotent:
+        return {"received": True, "event_type": event_type, "idempotent": True}
+    if not event:
+        return {"received": True, "event_type": event_type, "idempotent": True}
 
-    event_type = event.get("type")
     data_object = (event.get("data") or {}).get("object") or {}
-    event_id = event.get("id")
-
-    # Idempotency: skip if already processed
-    if event_id:
-        existing = await session.execute(select(StripeEvent).where(StripeEvent.event_id == event_id))
-        if existing.scalar_one_or_none():
-            return {"received": True, "event_type": event_type, "idempotent": True}
-        try:
-            session.add(StripeEvent(event_id=event_id, event_type=event_type))
-            await session.commit()
-        except IntegrityError:
-            await session.rollback()
-            return {"received": True, "event_type": event_type, "idempotent": True}
 
     tenant_id = data_object.get("metadata", {}).get("tenant_id") or data_object.get("tenant_id")
     plan_code = data_object.get("metadata", {}).get("plan_code")
@@ -331,15 +304,6 @@ async def handle_webhook_event(session: AsyncSession, payload: bytes, signature:
         subscription.checkout_session_id = data_object.get("id") or subscription.checkout_session_id
         await session.commit()
         await _sync_tenant_plan(session, tenant_uuid, subscription.plan_code)
-    elif event_type and event_type.startswith("customer.subscription") and tenant_uuid:
-        subscription = await _get_or_create_subscription(session, tenant_uuid, settings=settings)
-        subscription.plan_code = plan_code or subscription.plan_code
-        subscription.status = data_object.get("status") or subscription.status
-        subscription.stripe_subscription_id = data_object.get("id") or subscription.stripe_subscription_id
-        subscription.current_period_end = _extract_timestamp(data_object.get("current_period_end"))
-        subscription.cancel_at_period_end = bool(data_object.get("cancel_at_period_end"))
-        await session.commit()
-        await _sync_tenant_plan(session, tenant_uuid, subscription.plan_code)
     elif event_type == "invoice.payment_failed" and tenant_uuid:
         subscription = await _get_or_create_subscription(session, tenant_uuid, settings=settings)
         subscription.status = "past_due"
@@ -348,6 +312,15 @@ async def handle_webhook_event(session: AsyncSession, payload: bytes, signature:
         subscription = await _get_or_create_subscription(session, tenant_uuid, settings=settings)
         subscription.status = "canceled"
         subscription.cancel_at_period_end = True
+        await session.commit()
+        await _sync_tenant_plan(session, tenant_uuid, subscription.plan_code)
+    elif event_type and event_type.startswith("customer.subscription") and tenant_uuid:
+        subscription = await _get_or_create_subscription(session, tenant_uuid, settings=settings)
+        subscription.plan_code = plan_code or subscription.plan_code
+        subscription.status = data_object.get("status") or subscription.status
+        subscription.stripe_subscription_id = data_object.get("id") or subscription.stripe_subscription_id
+        subscription.current_period_end = _extract_timestamp(data_object.get("current_period_end"))
+        subscription.cancel_at_period_end = bool(data_object.get("cancel_at_period_end"))
         await session.commit()
         await _sync_tenant_plan(session, tenant_uuid, subscription.plan_code)
 

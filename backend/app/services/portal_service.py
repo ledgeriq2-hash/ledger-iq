@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import secrets
-from datetime import datetime, timezone
-from typing import Any, Sequence, Tuple
+from collections.abc import Sequence
+from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import delete, select
@@ -130,7 +131,7 @@ async def delete_portal_token(session: AsyncSession, tenant_id: UUID, token_id: 
 
 async def validate_portal_token(
     session: AsyncSession, token: str
-) -> Tuple[PortalEntityType, Any, PortalToken] | None:
+) -> tuple[PortalEntityType, Any, PortalToken] | None:
     """
     Validate a portal token for customer/supplier access.
 
@@ -143,8 +144,8 @@ async def validate_portal_token(
         return None
     expires_at = portal_token.expires_at
     if expires_at.tzinfo is None:
-        expires_at = expires_at.replace(tzinfo=timezone.utc)
-    now = datetime.now(timezone.utc)
+        expires_at = expires_at.replace(tzinfo=UTC)
+    now = datetime.now(UTC)
     if expires_at <= now:
         return None
     if portal_token.is_used:

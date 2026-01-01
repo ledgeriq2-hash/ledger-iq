@@ -2,14 +2,19 @@ from __future__ import annotations
 
 import json
 import os
-import secrets
 from collections.abc import Sequence
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from pydantic import EmailStr, Field, field_validator
+from pydantic import EmailStr, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
+
+
+DEV_DATABASE_URL = "postgresql+asyncpg://ledgeriq:ledgeriq_password@localhost:5432/ledgeriq"
+DEV_JWT_SECRET_FALLBACK = "dev-jwt-secret-key"
+DEV_JWT_REFRESH_SECRET_FALLBACK = "dev-jwt-refresh-secret-key"
 
 
 def _resolve_env_file() -> str | None:
@@ -50,17 +55,32 @@ class Settings(BaseSettings):
     app_name: str = "Ledger IQ"
     environment: str = "production"
     debug: bool = False
+    log_level: str = "INFO"
 
-    database_url: str = "sqlite+aiosqlite:///./ledgeriq.db"
+    database_url: str | None = None
     redis_enabled: bool = True
     redis_url: str = "redis://localhost:6379/0"
     frontend_url: str = "http://localhost:3000"
 
-    jwt_secret_key: str = Field(default_factory=lambda: secrets.token_urlsafe(32))
-    jwt_refresh_secret_key: str = Field(default_factory=lambda: secrets.token_urlsafe(32))
+    jwt_secret_key: str | None = None
+    jwt_refresh_secret_key: str | None = None
     jwt_algorithm: str = "HS256"
     access_token_expires_minutes: int = 30
     refresh_token_expires_days: int = 30
+    refresh_cookie_name: str = "refresh_token"
+    refresh_cookie_samesite: str = "lax"
+    refresh_cookie_path: str = "/"
+    refresh_cookie_secure: bool = False
+    csrf_enabled: bool = True
+    csrf_cookie_name: str = "csrf_token"
+    csrf_header_name: str = "X-CSRF-Token"
+    csrf_exempt_paths: list[str] = Field(
+        default_factory=lambda: [
+            "/api/v1/auth/login",
+            "/api/v1/auth/register",
+            "/api/v1/billing/webhook",
+        ]
+    )
 
     backend_cors_origins: list[str] = Field(default_factory=list)
     sentry_dsn: str | None = None
@@ -95,6 +115,30 @@ class Settings(BaseSettings):
     stripe_webhook_secret: str | None = None
     stripe_price_free: str | None = None
     stripe_price_pro: str | None = None
+    billing_enabled: bool = True
+
+    @field_validator("log_level", mode="before")
+    @classmethod
+    def normalize_log_level(cls, value: Any) -> str:
+        if value is None or str(value).strip() == "":
+            return "INFO"
+        return str(value).strip().upper()
+
+    @field_validator("csrf_enabled", mode="before")
+    @classmethod
+    def parse_csrf_enabled(cls, value: Any) -> bool:
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return True
+        if isinstance(value, (int, float)):
+            return bool(int(value))
+        text = str(value).strip().lower()
+        if text in {"1", "true", "t", "yes", "y", "on"}:
+            return True
+        if text in {"0", "false", "f", "no", "n", "off"}:
+            return False
+        raise ValueError("CSRF_ENABLED must be a boolean (true/false/1/0)")
 
     @field_validator("soft_launch_tenant_slugs", mode="before")
     @classmethod
@@ -141,6 +185,52 @@ class Settings(BaseSettings):
         if isinstance(value, (list, tuple, set, frozenset)):
             return [str(origin).strip() for origin in value if str(origin).strip()]
         raise ValueError("Unsupported type for CORS origins")
+
+    @model_validator(mode="after")
+    def enforce_guardrails(self) -> "Settings":
+        """Require critical secrets in production and keep safe defaults elsewhere."""
+        env = (self.environment or "production").strip().lower()
+        is_production = env in {"production", "prod"}
+        if not is_production:
+            if not self.database_url or not str(self.database_url).strip():
+                object.__setattr__(self, "database_url", DEV_DATABASE_URL)
+            if not self.jwt_secret_key:
+                object.__setattr__(self, "jwt_secret_key", DEV_JWT_SECRET_FALLBACK)
+            if not self.jwt_refresh_secret_key:
+                object.__setattr__(self, "jwt_refresh_secret_key", DEV_JWT_REFRESH_SECRET_FALLBACK)
+            return self
+        object.__setattr__(self, "refresh_cookie_secure", True)
+
+        missing: list[str] = []
+        invalid: list[str] = []
+
+        def require(value: str | None, name: str) -> None:
+            if value is None or (isinstance(value, str) and not value.strip()):
+                missing.append(name)
+
+        require(self.jwt_secret_key, "JWT_SECRET_KEY")
+        require(self.jwt_refresh_secret_key, "JWT_REFRESH_SECRET_KEY")
+        require(self.database_url, "DATABASE_URL")
+        if self.database_url and str(self.database_url).strip():
+            try:
+                driver = make_url(self.database_url).drivername
+                if driver.startswith("sqlite"):
+                    invalid.append("DATABASE_URL must not use SQLite in production")
+            except Exception:
+                invalid.append("DATABASE_URL is invalid")
+        if self.billing_enabled:
+            require(self.stripe_api_key, "STRIPE_API_KEY")
+            require(self.stripe_webhook_secret, "STRIPE_WEBHOOK_SECRET")
+
+        if missing or invalid:
+            parts = []
+            if missing:
+                parts.append(f"missing required env vars: {', '.join(sorted(set(missing)))}")
+            if invalid:
+                parts.append(f"invalid settings: {', '.join(invalid)}")
+            raise ValueError(f"Production configuration error - {'; '.join(parts)}")
+
+        return self
 
 
 @lru_cache(maxsize=1)

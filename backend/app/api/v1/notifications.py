@@ -7,7 +7,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import deps
 from app.models.user import User
-from app.schemas.notification import NotificationCreate, NotificationList, NotificationPublic, NotificationUpdate
+from app.schemas.notification import (
+    NotificationCreate,
+    NotificationList,
+    NotificationPublic,
+    NotificationUpdate,
+)
 from app.services import notification_service
 
 router = APIRouter(prefix="/notifications")

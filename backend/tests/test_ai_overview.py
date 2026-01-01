@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from decimal import Decimal
 import uuid
 
@@ -25,7 +25,7 @@ async def test_ai_overview_is_tenant_isolated(client: AsyncClient, register_owne
     tenant_two = uuid.UUID(owner_two["tenant"]["id"])
 
     async with async_session_maker() as session:
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         session.add_all(
             [
                 AiLog(

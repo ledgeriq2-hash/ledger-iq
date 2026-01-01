@@ -5,26 +5,21 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from jose import JWTError, jwt
-from passlib.context import CryptContext
 
 from app.config import get_settings
+import bcrypt
 
 settings = get_settings()
-pwd_context = CryptContext(
-    schemes=["bcrypt_sha256", "bcrypt"],
-    deprecated="auto",
-    bcrypt__truncate_error=False,
-)
 
 
 def get_password_hash(password: str) -> str:
     """Hash a plaintext password using bcrypt."""
-    return pwd_context.hash(password)
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verify a plaintext password against a hashed password."""
-    return pwd_context.verify(plain_password, hashed_password)
+    return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
 
 
 def enforce_password_policy(password: str) -> None:
@@ -39,6 +34,8 @@ def enforce_password_policy(password: str) -> None:
         raise ValueError("Password must include upper and lower case letters")
     if not any(ch.isdigit() for ch in password):
         raise ValueError("Password must include at least one digit")
+    if len(password.encode("utf-8")) > 72:
+        raise ValueError("Password must be 72 bytes or fewer")
 
 
 def _create_token(
@@ -129,5 +126,4 @@ __all__ = [
     "create_access_token",
     "create_refresh_token",
     "decode_token",
-    "pwd_context",
 ]

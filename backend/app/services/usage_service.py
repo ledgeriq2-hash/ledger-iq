@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone, timedelta
+from datetime import UTC, date, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import select
@@ -24,39 +24,43 @@ async def _get_or_create_usage(session: AsyncSession, tenant_id: UUID, usage_dat
         payments_created=0,
         customers_created=0,
         total_logins=0,
-        last_activity_at=datetime.now(timezone.utc),
+        last_activity_at=datetime.now(UTC),
     )
     session.add(usage)
     await session.flush()
     return usage
 
 
-async def record_customer_created(session: AsyncSession, tenant_id: UUID) -> None:
+async def record_customer_created(session: AsyncSession, tenant_id: UUID, *, commit: bool = True) -> None:
     usage = await _get_or_create_usage(session, tenant_id)
     usage.customers_created += 1
-    usage.last_activity_at = datetime.now(timezone.utc)
-    await session.commit()
+    usage.last_activity_at = datetime.now(UTC)
+    if commit:
+        await session.commit()
 
 
-async def record_invoice_created(session: AsyncSession, tenant_id: UUID) -> None:
+async def record_invoice_created(session: AsyncSession, tenant_id: UUID, *, commit: bool = True) -> None:
     usage = await _get_or_create_usage(session, tenant_id)
     usage.invoices_created += 1
-    usage.last_activity_at = datetime.now(timezone.utc)
-    await session.commit()
+    usage.last_activity_at = datetime.now(UTC)
+    if commit:
+        await session.commit()
 
 
-async def record_payment_created(session: AsyncSession, tenant_id: UUID) -> None:
+async def record_payment_created(session: AsyncSession, tenant_id: UUID, *, commit: bool = True) -> None:
     usage = await _get_or_create_usage(session, tenant_id)
     usage.payments_created += 1
-    usage.last_activity_at = datetime.now(timezone.utc)
-    await session.commit()
+    usage.last_activity_at = datetime.now(UTC)
+    if commit:
+        await session.commit()
 
 
-async def record_login(session: AsyncSession, tenant_id: UUID) -> None:
+async def record_login(session: AsyncSession, tenant_id: UUID, *, commit: bool = True) -> None:
     usage = await _get_or_create_usage(session, tenant_id)
     usage.total_logins += 1
-    usage.last_activity_at = datetime.now(timezone.utc)
-    await session.commit()
+    usage.last_activity_at = datetime.now(UTC)
+    if commit:
+        await session.commit()
 
 
 async def fetch_recent_usage(session: AsyncSession, tenant_id: UUID, days: int = 30) -> list[TenantDailyUsage]:
