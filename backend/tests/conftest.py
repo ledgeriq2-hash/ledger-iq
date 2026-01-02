@@ -103,7 +103,14 @@ def event_loop():
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     yield loop
+    if loop.is_closed():
+        asyncio.set_event_loop(None)
+        return
     loop.run_until_complete(asyncio.sleep(0))
+    loop.run_until_complete(loop.shutdown_asyncgens())
+    if hasattr(loop, "shutdown_default_executor"):
+        loop.run_until_complete(loop.shutdown_default_executor())
+    gc.collect()
     loop.close()
     asyncio.set_event_loop(None)
 
@@ -157,6 +164,7 @@ def setup_db(event_loop):
                 await conn.run_sync(Base.metadata.drop_all)
         await dispose_engine()
         await asyncio.sleep(0)
+        gc.collect()
         if url.drivername.startswith("sqlite") and url.database:
             db_path = Path(url.database)
             if db_path.exists():
