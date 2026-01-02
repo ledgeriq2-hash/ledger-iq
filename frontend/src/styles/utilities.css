@@ -1,0 +1,100 @@
+/* Layout utilities (RTL-safe when combined with logical properties elsewhere) */
+
+.u-container {
+  max-width: 1080px;
+  margin-inline: auto;
+  padding-inline: var(--space-4);
+  padding-block: var(--space-4);
+}
+
+.u-grid {
+  display: grid;
+}
+
+.u-flex {
+  display: flex;
+}
+
+.u-col {
+  flex-direction: column;
+}
+
+.u-items-center {
+  align-items: center;
+}
+
+.u-justify-between {
+  justify-content: space-between;
+}
+
+.u-justify-end {
+  justify-content: flex-end;
+}
+
+.u-inline-flex {
+  display: inline-flex;
+}
+
+.u-wrap {
+  flex-wrap: wrap;
+}
+
+.u-gap-1 {
+  gap: var(--space-1);
+}
+.u-gap-2 {
+  gap: var(--space-2);
+}
+.u-gap-3 {
+  gap: var(--space-3);
+}
+.u-gap-4 {
+  gap: var(--space-4);
+}
+.u-gap-5 {
+  gap: var(--space-5);
+}
+.u-gap-6 {
+  gap: var(--space-6);
+}
+
+.u-pad-2 {
+  padding: var(--space-2);
+}
+.u-pad-3 {
+  padding: var(--space-3);
+}
+.u-pad-4 {
+  padding: var(--space-4);
+}
+.u-pad-5 {
+  padding: var(--space-5);
+}
+
+.u-pad-7 {
+  padding: var(--space-7);
+}
+
+.u-text-center {
+  text-align: center;
+}
+
+.u-text-muted {
+  color: var(--color-muted);
+}
+
+.u-text-primary {
+  color: var(--color-primary);
+}
+
+.u-m-0 {
+  margin: 0;
+}
+
+.u-maxw-sm {
+  max-width: 640px;
+}
+
+.u-overflow-auto {
+  overflow: auto;
+}
