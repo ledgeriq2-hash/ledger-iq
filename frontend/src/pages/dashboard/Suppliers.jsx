@@ -16,6 +16,7 @@ const money = (value) => {
 };
 
 const initialForm = {
+  code: "",
   name: "",
   email: "",
   phone: "",
@@ -41,6 +42,7 @@ const Suppliers = () => {
         key: supplier.id,
         id: supplier.id,
         name: supplier.name,
+        code: supplier.code,
         email: supplier.email,
         phone: supplier.phone,
         address: supplier.address,
@@ -61,6 +63,7 @@ const Suppliers = () => {
 
   const openEditModal = (supplier) => {
     setFormState({
+      code: supplier.code || "",
       name: supplier.name || "",
       email: supplier.email || "",
       phone: supplier.phone || "",
@@ -72,11 +75,16 @@ const Suppliers = () => {
 
   const modalError = modalState.mode === "create" ? createSupplier.error : updateSupplier.error;
   const isSavingModal = modalState.mode === "create" ? createSupplier.isPending : updateSupplier.isPending;
-  const canSubmitForm = Boolean(formState.name?.trim()) && !isSavingModal;
+  const requiresCode = modalState.mode === "create";
+  const canSubmitForm =
+    Boolean(formState.name?.trim()) &&
+    (!requiresCode || Boolean(formState.code?.trim())) &&
+    !isSavingModal;
 
   const submitForm = async () => {
     if (!formState.name?.trim()) return;
     const payload = {
+      code: formState.code?.trim(),
       name: formState.name.trim(),
       email: formState.email?.trim() || null,
       phone: formState.phone?.trim() || null,
@@ -88,7 +96,8 @@ const Suppliers = () => {
       if (modalState.mode === "create") {
         await createSupplier.mutateAsync(payload);
       } else if (modalState.supplier?.id) {
-        await updateSupplier.mutateAsync({ supplierId: modalState.supplier.id, payload });
+        const { code: _code, ...updatePayload } = payload;
+        await updateSupplier.mutateAsync({ supplierId: modalState.supplier.id, payload: updatePayload });
       }
       closeModal();
     } catch {
@@ -195,6 +204,15 @@ const Suppliers = () => {
       >
         {modalError ? <StatusPill tone="danger">{modalError?.message || "Failed to save supplier"}</StatusPill> : null}
         <div className="kit-form">
+          <div className="kit-formRow">
+            <div className="kit-label">Code</div>
+            <input
+              className="kit-input"
+              value={formState.code}
+              disabled={modalState.mode === "edit"}
+              onChange={(event) => setFormState((prev) => ({ ...prev, code: event.target.value }))}
+            />
+          </div>
           <div className="kit-formRow">
             <div className="kit-label">Name</div>
             <input className="kit-input" value={formState.name} onChange={(event) => setFormState((prev) => ({ ...prev, name: event.target.value }))} />

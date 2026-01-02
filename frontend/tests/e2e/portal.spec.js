@@ -8,7 +8,7 @@ test("smoke nav: dashboard -> predictions -> portal", async ({ page }) => {
     localStorage.setItem("actor_id", actorId);
   }, { tenantId: uuid, actorId: uuid });
 
-  await page.route("**/api/v1/settings", async (route) => {
+  await page.route("**/api/v1/settings/", async (route) => {
     await route.fulfill({
       status: 200,
       contentType: "application/json",

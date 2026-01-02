@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "../api/generated/index.js";
 
@@ -16,5 +16,13 @@ export const useClients = ({ page = 1, pageSize = 100 } = {}) => {
       const sorted = [...items].sort((a, b) => asNumber(b.balance) - asNumber(a.balance));
       return { ...data, items: sorted };
     },
+  });
+};
+
+export const useCreateCustomer = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload) => api.customers.createCustomer(payload),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["clients"] }),
   });
 };

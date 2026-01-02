@@ -118,6 +118,12 @@ export const TENANT_NOT_SET_ERROR = {
   message: "Tenant not set",
 };
 
+const clearTenantContext = () => {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem("tenant_id");
+  localStorage.removeItem("actor_id");
+};
+
 const normalizeError = (error) => {
   if (error && typeof error === "object" && !error?.response && error?.code && error?.message) {
     return {
@@ -210,6 +216,16 @@ axiosClient.interceptors.response.use(
       if (!path.startsWith("/login")) {
         window.location.assign("/login");
       }
+    }
+
+    if (
+      status === 404 &&
+      typeof window !== "undefined" &&
+      (normalized?.code === "tenant_not_found" ||
+        String(normalized?.message || "").toLowerCase().includes("tenant not found"))
+    ) {
+      clearTenantContext();
+      window.location.assign("/onboarding/tenant");
     }
 
     if (normalized?.code !== "TENANT_NOT_SET" && errorNotifier && (!status || status >= 500)) {

@@ -20,6 +20,19 @@ If you keep CSRF enabled in local dev, POSTs to `/api/v1/ai/*` are CSRF-exempt (
 docker compose up -d
 ```
 
+## Seed demo tenant (Docker Compose)
+Create a demo tenant, owner user, and sample data.
+
+```powershell
+$env:DEMO_OWNER_PASSWORD = "Secret123!"
+docker compose exec -e DEMO_OWNER_PASSWORD=$env:DEMO_OWNER_PASSWORD backend python -m app.management.demo_data
+```
+
+Then login at `http://localhost/login` using:
+- Tenant slug: `demo-ledger`
+- Email: `demo.owner@example.com`
+- Password: the value you set in `DEMO_OWNER_PASSWORD`
+
 ## Backend (Windows PowerShell)
 ```powershell
 cd backend

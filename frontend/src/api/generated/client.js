@@ -40,8 +40,8 @@ export const api = {
     logoutAll: async () => request({ method: "POST", path: "/api/v1/auth/logout-all" }),
   },
   settings: {
-    getSettings: async () => request({ method: "GET", path: "/api/v1/settings" }),
-    updateSettings: async (payload) => request({ method: "PUT", path: "/api/v1/settings", body: payload }),
+    getSettings: async () => request({ method: "GET", path: "/api/v1/settings/" }),
+    updateSettings: async (payload) => request({ method: "PUT", path: "/api/v1/settings/", body: payload }),
   },
   admin: {
     listTenants: async (params = {}) => request({ method: "GET", path: "/api/v1/admin/tenants/", query: params }),
