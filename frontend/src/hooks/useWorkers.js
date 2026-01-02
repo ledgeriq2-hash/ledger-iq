@@ -10,7 +10,7 @@ const normalizeWorkers = (data) => {
 
 const invalidateWorkers = (client) => client.invalidateQueries({ queryKey: ["workers"] });
 
-export const useWorkers = ({ page = 1, pageSize = 200 } = {}) => {
+export const useWorkers = ({ page = 1, pageSize = 100 } = {}) => {
   return useQuery({
     queryKey: ["workers", page, pageSize],
     queryFn: async () => {

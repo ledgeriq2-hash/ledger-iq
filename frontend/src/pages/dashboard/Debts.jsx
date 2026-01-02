@@ -39,8 +39,8 @@ const initialPaymentForm = {
 
 const Debts = () => {
   const [statusFilter, setStatusFilter] = useState("all");
-  const debtsQuery = useDebts({ status: statusFilter, page: 1, pageSize: 200 });
-  const suppliersQuery = useSuppliers({ page: 1, pageSize: 200 });
+  const debtsQuery = useDebts({ status: statusFilter, page: 1, pageSize: 100 });
+  const suppliersQuery = useSuppliers({ page: 1, pageSize: 100 });
   const createDebt = useCreateDebt();
   const updateDebt = useUpdateDebt();
   const deleteDebt = useDeleteDebt();

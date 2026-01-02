@@ -39,6 +39,8 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      FEATURE_OPTIONAL_ROUTES: ${FEATURE_OPTIONAL_ROUTES:-true}
     depends_on:
       db:
         condition: service_healthy

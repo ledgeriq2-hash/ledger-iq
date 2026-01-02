@@ -7,7 +7,7 @@ const asNumber = (value) => {
   return Number.isFinite(n) ? n : 0;
 };
 
-export const useClients = ({ page = 1, pageSize = 200 } = {}) => {
+export const useClients = ({ page = 1, pageSize = 100 } = {}) => {
   return useQuery({
     queryKey: ["clients", { page, pageSize }],
     queryFn: async () => {

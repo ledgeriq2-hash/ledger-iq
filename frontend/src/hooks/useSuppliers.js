@@ -15,7 +15,7 @@ const normalizeSuppliers = (data) => {
 
 const invalidateSuppliers = (client) => client.invalidateQueries({ queryKey: ["suppliers"] });
 
-export const useSuppliers = ({ page = 1, pageSize = 200 } = {}) => {
+export const useSuppliers = ({ page = 1, pageSize = 100 } = {}) => {
   return useQuery({
     queryKey: ["suppliers", page, pageSize],
     queryFn: async () => {

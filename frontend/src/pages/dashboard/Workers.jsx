@@ -25,7 +25,7 @@ const initialForm = {
 };
 
 const Workers = () => {
-  const workersQuery = useWorkers({ page: 1, pageSize: 200 });
+  const workersQuery = useWorkers({ page: 1, pageSize: 100 });
   const createWorker = useCreateWorker();
   const updateWorker = useUpdateWorker();
   const deleteWorker = useDeleteWorker();

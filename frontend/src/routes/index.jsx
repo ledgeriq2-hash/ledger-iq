@@ -4,6 +4,10 @@ import { Navigate } from "react-router-dom";
 import NotFound from "../pages/shared/NotFound.jsx";
 import Portal from "../pages/portal/Portal.jsx";
 import MainLayout from "../layouts/MainLayout.jsx";
+import Login from "../pages/auth/Login.jsx";
+import Signup from "../pages/auth/Signup.jsx";
+import ForgotPassword from "../pages/auth/ForgotPassword.jsx";
+import ResetPassword from "../pages/auth/ResetPassword.jsx";
 import Dashboard from "../pages/dashboard/Dashboard.jsx";
 import Clients from "../pages/dashboard/Clients.jsx";
 import ClientDetails from "../pages/dashboard/ClientDetails.jsx";
@@ -27,6 +31,10 @@ import Exports from "../pages/exports/Exports.jsx";
 import TenantSelect from "../pages/onboarding/TenantSelect.jsx";
 
 const routes = [
+  { path: "/login", element: <Login /> },
+  { path: "/signup", element: <Signup /> },
+  { path: "/forgot-password", element: <ForgotPassword /> },
+  { path: "/reset-password", element: <ResetPassword /> },
   {
     path: "/onboarding/tenant",
     element: <TenantSelect />,

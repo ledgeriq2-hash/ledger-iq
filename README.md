@@ -8,7 +8,9 @@ Auth/JWT/MFA/RBAC/rate-limits are disabled for local runtime. All API calls requ
 
 ## Environment setup
 - Backend: copy `backend/.env.example` to `.env.development` (repo root or `backend/`) and fill in any required values for your environment (or copy to `backend/.env` and set `ENV_FILE=backend/.env`). For docker-compose Postgres, set `DATABASE_URL=postgresql+asyncpg://ledgeriq:ledgeriq_password@localhost:5432/ledgeriq`.
+- Local optional routes: set `FEATURE_OPTIONAL_ROUTES=true` to expose dashboard, reports, payments, AI/ML, admin, settings routes.
 - Frontend: copy `frontend/.env.example` to `frontend/.env` (or keep using PowerShell env vars as shown below).
+  - If the frontend is proxied via nginx at `http://localhost`, `VITE_API_ORIGIN` can be left unset (defaults to current origin). To override, set `VITE_API_ORIGIN=http://localhost`.
 
 Note: for local API usage via curl/Postman, keep `CSRF_ENABLED=false` in your dev env file.
 If you keep CSRF enabled in local dev, POSTs to `/api/v1/ai/*` are CSRF-exempt (dev-only) so you can call the AI forecast/anomaly endpoints without CSRF tokens.

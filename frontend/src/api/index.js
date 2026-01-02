@@ -85,6 +85,16 @@ const shouldSkipAuth = (url = "", config = {}) => {
   return normalized.startsWith(`${API_VERSION_PREFIX}/portal/`) || normalized.startsWith("/portal/");
 };
 
+const isAuthRoute = (url = "") => {
+  const normalized = ensureLeadingSlash(url);
+  return (
+    normalized.startsWith(`${API_VERSION_PREFIX}/auth/`) ||
+    normalized.startsWith("/auth/") ||
+    normalized.startsWith(`${API_VERSION_PREFIX}/portal/`) ||
+    normalized.startsWith("/portal/")
+  );
+};
+
 const guardApiPath = (baseURL, url) => {
   const combined = `${baseURL || ""}${url || ""}`;
   if (combined.includes(DUPLICATE_LEGACY_PREFIX) || combined.includes(DUPLICATE_VERSION_PREFIX)) {
@@ -183,11 +193,24 @@ axiosClient.interceptors.response.use(
     const normalized = normalizeError(error);
     const resolvedUrl = getResolvedUrl(error?.config);
     const method = (error?.config?.method || "request").toUpperCase();
+    const token = getAccessToken();
 
     console.error(`[API] ${method} failed (${resolvedUrl})`, {
       status,
       error: normalized,
     });
+
+    if (
+      status === 401 &&
+      !token &&
+      typeof window !== "undefined" &&
+      !isAuthRoute(error?.config?.url || "")
+    ) {
+      const path = window.location.pathname || "";
+      if (!path.startsWith("/login")) {
+        window.location.assign("/login");
+      }
+    }
 
     if (normalized?.code !== "TENANT_NOT_SET" && errorNotifier && (!status || status >= 500)) {
       errorNotifier({
@@ -202,4 +225,3 @@ axiosClient.interceptors.response.use(
 );
 
 export default axiosClient;
-

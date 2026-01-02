@@ -63,8 +63,8 @@ const initialForm = {
 
 const Invoices = () => {
   const [statusFilter, setStatusFilter] = useState("all");
-  const invoicesQuery = useInvoices({ page: 1, pageSize: 200, status: statusFilter });
-  const customersQuery = useClients({ page: 1, pageSize: 200 });
+  const invoicesQuery = useInvoices({ page: 1, pageSize: 100, status: statusFilter });
+  const customersQuery = useClients({ page: 1, pageSize: 100 });
 
   const createInvoice = useCreateInvoice();
   const updateInvoice = useUpdateInvoice();

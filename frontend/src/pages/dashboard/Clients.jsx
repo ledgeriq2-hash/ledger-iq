@@ -22,7 +22,7 @@ const balanceTone = (balance) => {
 };
 
 const Clients = () => {
-  const { data, isLoading, error } = useClients({ page: 1, pageSize: 200 });
+  const { data, isLoading, error } = useClients({ page: 1, pageSize: 100 });
   const clients = data?.items || [];
 
   const columns = [
