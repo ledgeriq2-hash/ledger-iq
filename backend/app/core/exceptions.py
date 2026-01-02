@@ -91,7 +91,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         if "granularity" in fields:
             return json_error_response(status.HTTP_400_BAD_REQUEST, "invalid_granularity", "Invalid granularity.", details)
 
-    return json_error_response(status.HTTP_422_UNPROCESSABLE_ENTITY, "validation_error", "Validation error", details)
+    return json_error_response(status.HTTP_422_UNPROCESSABLE_CONTENT, "validation_error", "Validation error", details)
 
 
 async def integrity_error_handler(_: Request, exc: IntegrityError) -> JSONResponse:

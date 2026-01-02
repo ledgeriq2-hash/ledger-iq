@@ -1,4 +1,5 @@
 import asyncio
+import gc
 import logging
 import os
 import sys
@@ -97,8 +98,30 @@ def anyio_backend():
     return "asyncio"
 
 
+@pytest.fixture(scope="session")
+def event_loop():
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    yield loop
+    loop.run_until_complete(asyncio.sleep(0))
+    loop.close()
+    asyncio.set_event_loop(None)
+
+
+@pytest.fixture(autouse=True)
+def _ensure_loop_after_test(event_loop):
+    yield
+    if event_loop.is_closed():
+        return
+    try:
+        asyncio.get_event_loop()
+    except RuntimeError:
+        asyncio.set_event_loop(event_loop)
+    gc.collect()
+
+
 @pytest.fixture(scope="session", autouse=True)
-def setup_db():
+def setup_db(event_loop):
     # Patch redis with in-memory dummy to avoid external dependency during tests
     dummy = DummyRedis()
     redis_module._redis_client = dummy
@@ -114,16 +137,26 @@ def setup_db():
 
     email_service.send_email = _send_email_stub
 
+    def _run(coro) -> None:
+        event_loop.run_until_complete(coro)
+
     async def _setup() -> None:
         _strip_server_defaults_for_sqlite()
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
 
     async def _teardown() -> None:
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.drop_all)
-        await dispose_engine()
         url = make_url(os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///./test.db"))
+        is_sqlite = url.drivername.startswith("sqlite")
+        async with engine.begin() as conn:
+            if is_sqlite:
+                await conn.exec_driver_sql("PRAGMA foreign_keys=OFF")
+                await conn.run_sync(_drop_all_tables)
+                await conn.exec_driver_sql("PRAGMA foreign_keys=ON")
+            else:
+                await conn.run_sync(Base.metadata.drop_all)
+        await dispose_engine()
+        await asyncio.sleep(0)
         if url.drivername.startswith("sqlite") and url.database:
             db_path = Path(url.database)
             if db_path.exists():
@@ -134,9 +167,13 @@ def setup_db():
                     except PermissionError:
                         await asyncio.sleep(0.1)
 
-    asyncio.run(_setup())
+    def _drop_all_tables(sync_conn) -> None:
+        for table in Base.metadata.tables.values():
+            table.drop(sync_conn, checkfirst=True)
+
+    _run(_setup())
     yield
-    asyncio.run(_teardown())
+    _run(_teardown())
 
 
 @pytest.fixture
