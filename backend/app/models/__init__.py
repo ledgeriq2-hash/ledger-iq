@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from app.models.activity_log import ActivityLog
 from app.models.ai_log import AiLog
+from app.models.ai_insight import AiInsight
+from app.models.ai_run import AiRun
 from app.models.accounting_period_lock import AccountingPeriodLock
 from app.models.attachment import Attachment
 from app.models.audit_log import AuditLog
@@ -9,10 +11,12 @@ from app.models.billing_plan import BillingPlan
 from app.models.cashflow_category import CashflowCategory
 from app.models.chart_of_account import ChartOfAccount
 from app.models.customer import Customer
+from app.models.data_snapshot import DataSnapshot
 from app.models.employee import Employee, EmployeeStatus
 from app.models.error_event import ErrorEvent
 from app.models.expense import Expense
 from app.models.feedback import Feedback
+from app.models.gdpr_request import GdprRequest
 from app.models.invoice import Invoice
 from app.models.invoice_item import InvoiceItem
 from app.models.journal_entry import JournalEntry
@@ -26,6 +30,7 @@ from app.models.refresh_token import RefreshToken
 from app.models.reports_cache import ReportsCache
 from app.models.role import Role
 from app.models.stock_movement import StockMovement
+from app.models.stripe_event import StripeEvent
 from app.models.supplier import Supplier
 from app.models.tenant import Tenant
 from app.models.tenant_config import TenantConfig
@@ -38,6 +43,8 @@ from app.models.user import User
 ALL_MODELS = [
     ActivityLog,
     AiLog,
+    AiInsight,
+    AiRun,
     AccountingPeriodLock,
     Attachment,
     AuditLog,
@@ -45,11 +52,13 @@ ALL_MODELS = [
     CashflowCategory,
     ChartOfAccount,
     Customer,
+    DataSnapshot,
     Employee,
     EmployeeStatus,
     ErrorEvent,
     Expense,
     Feedback,
+    GdprRequest,
     Invoice,
     InvoiceItem,
     JournalEntry,
@@ -63,6 +72,7 @@ ALL_MODELS = [
     ReportsCache,
     Role,
     StockMovement,
+    StripeEvent,
     Supplier,
     Tenant,
     TenantConfig,
@@ -77,6 +87,8 @@ ALL_MODELS = [
 __all__ = [
     "ActivityLog",
     "AiLog",
+    "AiInsight",
+    "AiRun",
     "AccountingPeriodLock",
     "Attachment",
     "AuditLog",
@@ -84,11 +96,13 @@ __all__ = [
     "CashflowCategory",
     "ChartOfAccount",
     "Customer",
+    "DataSnapshot",
     "Employee",
     "EmployeeStatus",
     "ErrorEvent",
     "Expense",
     "Feedback",
+    "GdprRequest",
     "Invoice",
     "InvoiceItem",
     "JournalEntry",
@@ -102,6 +116,7 @@ __all__ = [
     "ReportsCache",
     "Role",
     "StockMovement",
+    "StripeEvent",
     "Supplier",
     "Tenant",
     "TenantConfig",

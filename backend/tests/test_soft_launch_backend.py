@@ -23,7 +23,7 @@ from app.services import (
 
 # Test-only route to force a 500 for error event capture.
 if not any(r.path == "/api/test-error" for r in app.router.routes):
-    @app.get("/api/test-error")
+    @app.get("/api/test-error", include_in_schema=False)
     async def _raise_test_error():
         raise RuntimeError("boom")
 

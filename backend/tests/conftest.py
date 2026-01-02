@@ -20,8 +20,10 @@ os.environ.setdefault("ENVIRONMENT", "test")
 os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///./test.db")
 os.environ.setdefault("FRONTEND_URL", "http://testserver")
 os.environ.setdefault("CSRF_ENABLED", "false")
+os.environ.setdefault("FEATURE_OPTIONAL_ROUTES", "true")
 
 from app.database import Base, async_session_maker, dispose_engine, engine  # noqa: E402
+import app.models  # noqa: E402
 from app.main import app  # noqa: E402
 import app.core.redis as redis_module  # noqa: E402
 from app.services import email_service  # noqa: E402
@@ -96,7 +98,7 @@ def anyio_backend():
 
 
 @pytest.fixture(scope="session", autouse=True)
-async def setup_db():
+def setup_db():
     # Patch redis with in-memory dummy to avoid external dependency during tests
     dummy = DummyRedis()
     redis_module._redis_client = dummy
@@ -112,23 +114,29 @@ async def setup_db():
 
     email_service.send_email = _send_email_stub
 
-    _strip_server_defaults_for_sqlite()
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    async def _setup() -> None:
+        _strip_server_defaults_for_sqlite()
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+    async def _teardown() -> None:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+        await dispose_engine()
+        url = make_url(os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///./test.db"))
+        if url.drivername.startswith("sqlite") and url.database:
+            db_path = Path(url.database)
+            if db_path.exists():
+                for _ in range(5):
+                    try:
+                        db_path.unlink()
+                        break
+                    except PermissionError:
+                        await asyncio.sleep(0.1)
+
+    asyncio.run(_setup())
     yield
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-    await dispose_engine()
-    url = make_url(os.environ.get("DATABASE_URL", "sqlite+aiosqlite:///./test.db"))
-    if url.drivername.startswith("sqlite") and url.database:
-        db_path = Path(url.database)
-        if db_path.exists():
-            for _ in range(5):
-                try:
-                    db_path.unlink()
-                    break
-                except PermissionError:
-                    await asyncio.sleep(0.1)
+    asyncio.run(_teardown())
 
 
 @pytest.fixture

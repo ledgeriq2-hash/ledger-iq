@@ -136,11 +136,7 @@ async def billing_webhook(
     stripe_signature: str | None = Header(default=None, alias="Stripe-Signature"),
 ):
     body = await request.body()
-    try:
-        result = await billing_service.handle_webhook_event(session, body, stripe_signature)
-        return result
-    except AppException as exc:
-        raise HTTPException(status_code=exc.http_status, detail=exc.message) from exc
+    return await billing_service.handle_webhook_event(session, body, stripe_signature)
 
 
 __all__ = ["router"]

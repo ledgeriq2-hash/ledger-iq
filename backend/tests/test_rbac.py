@@ -7,7 +7,7 @@ from httpx import AsyncClient
 
 from app.database import async_session_maker
 from app.models.tenant_subscription import TenantSubscription
-from app.services import role_service
+from app.services import billing_service, role_service
 
 
 def auth_headers(token: str) -> dict[str, str]:
@@ -52,12 +52,16 @@ async def test_rbac_matrix(client: AsyncClient, register_owner):
 
     # Ensure roles exist and subscription is active for paid limits
     async with async_session_maker() as session:
+        await billing_service.ensure_default_plans(session)
         subscription = await session.get(TenantSubscription, tenant_id)
         if subscription:
             subscription.status = "active"
             subscription.plan_code = "pro"
-            await session.commit()
-            await session.refresh(subscription)
+        else:
+            subscription = TenantSubscription(tenant_id=tenant_id, status="active", plan_code="pro")
+            session.add(subscription)
+        await session.commit()
+        await session.refresh(subscription)
         admin_role = await create_role(session, tenant_id, "ADMIN")
         accountant_role = await create_role(session, tenant_id, "ACCOUNTANT")
         viewer_role = await create_role(session, tenant_id, "VIEWER")

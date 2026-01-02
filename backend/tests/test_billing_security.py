@@ -37,7 +37,7 @@ async def test_billing_webhook_rejects_invalid_signature(client: AsyncClient):
         headers={"Stripe-Signature": "t=1,v1=bogus"},
     )
     assert resp.status_code == status.HTTP_400_BAD_REQUEST, resp.text
-    assert resp.json().get("error", {}).get("code") == "invalid_webhook_signature"
+    assert resp.json().get("code") == "invalid_webhook_signature"
 
 
 @pytest.mark.anyio

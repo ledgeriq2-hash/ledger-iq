@@ -21,6 +21,7 @@ __all__ = [
     "tenant_config_service",
     "feedback_service",
     "billing_service",
+    "stripe_service",
     "onboarding_service",
     "audit_log_service",
     "maintenance_service",
@@ -28,4 +29,6 @@ __all__ = [
     "stock_movement_service",
     "treasury_service",
     "debt_service",
+    "settings_service",
+    "ai_insights_service",
 ]

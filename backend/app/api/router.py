@@ -39,7 +39,6 @@ _include(tenants_router, prefix="/v1", tags=["tenants"])
 _include(treasury_router, prefix="/v1", tags=["treasury"])
 
 if settings.feature_optional_routes:
-    from app.api.settings import router as settings_router
     from app.api.v1.admin import router as admin_router
     from app.api.v1.ai import router as ai_router
     from app.api.v1.auth import router as auth_router
@@ -58,9 +57,10 @@ if settings.feature_optional_routes:
     from app.api.v1.portal import router as portal_router
     from app.api.v1.recurring_invoices import router as recurring_invoices_router
     from app.api.v1.reports import router as reports_router
+    from app.api.v1.settings import router as settings_router
     from app.api.v1.users import router as users_router
 
-    _include(settings_router, prefix="", tags=["settings"])
+    _include(settings_router, prefix="/v1", tags=["settings"])
     _include(dashboard_router, prefix="/v1", tags=["dashboard"])
     _include(portal_contract_router, prefix="", tags=["portal"])
     _include(auth_router, prefix="/v1", tags=["auth"])

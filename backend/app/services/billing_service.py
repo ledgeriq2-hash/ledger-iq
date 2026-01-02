@@ -46,10 +46,7 @@ async def ensure_default_plans(session: AsyncSession, settings=None) -> None:
             "metadata_json": {"stripe_price_id": getattr(settings, "stripe_price_pro", None)},
         },
     ]
-    existing = {
-        plan.code
-        for plan in (await session.execute(select(BillingPlan.code))).scalars().all()
-    }
+    existing = set((await session.execute(select(BillingPlan.code))).scalars().all())
     created = []
     for payload in defaults:
         if payload["code"] in existing:
