@@ -36,6 +36,8 @@ DEFAULT_PERMISSION_CODES = [
     "journal.manual.create",
     "journal.post",
     "journal.reverse",
+    "period.lock",
+    "period.unlock",
 ]
 
 DEFAULT_ACCOUNTS = [

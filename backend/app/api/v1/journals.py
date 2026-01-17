@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api import deps
+from app.accounting.use_cases.lock_accounting_period import lock_accounting_period, unlock_accounting_period
 from app.core.permissions import require_perm
 from app.models.journal_entry import JournalEntry
 from app.models.journal_line import JournalLine
@@ -18,6 +19,7 @@ from app.schemas.journals import (
     JournalEntryManualCreate,
     JournalEntryReverseRequest,
 )
+from app.schemas.period_lock import AccountingPeriodLockCreate, AccountingPeriodLockPublic
 from app.services.ledger_service import LedgerService
 
 router = APIRouter(prefix="/journals")
@@ -133,6 +135,45 @@ async def reverse_journal_entry(
     actor_id = getattr(request.state, "user_id", None)
     service = LedgerService(session=session, tenant_id=tenant_id, actor_id=actor_id)
     return await service.reverse_entry(entry_id, reason=payload.reason)
+
+
+@router.post("/period-locks", response_model=AccountingPeriodLockPublic, status_code=status.HTTP_201_CREATED)
+async def lock_accounting_period_endpoint(
+    payload: AccountingPeriodLockCreate,
+    request: Request,
+    session: AsyncSession = Depends(deps.get_db),
+    tenant_id: UUID = Depends(deps.get_current_tenant),
+    _: object = Depends(deps.get_current_active_user),
+    __: object = Depends(require_perm("period.lock")),
+):
+    actor_id = getattr(request.state, "user_id", None)
+    return await lock_accounting_period(
+        session,
+        tenant_id=tenant_id,
+        start_date=payload.start_date,
+        end_date=payload.end_date,
+        actor_id=actor_id,
+        commit=True,
+    )
+
+
+@router.delete("/period-locks/{lock_id}", response_model=AccountingPeriodLockPublic)
+async def unlock_accounting_period_endpoint(
+    lock_id: UUID,
+    request: Request,
+    session: AsyncSession = Depends(deps.get_db),
+    tenant_id: UUID = Depends(deps.get_current_tenant),
+    _: object = Depends(deps.get_current_active_user),
+    __: object = Depends(require_perm("period.unlock")),
+):
+    actor_id = getattr(request.state, "user_id", None)
+    return await unlock_accounting_period(
+        session,
+        tenant_id=tenant_id,
+        lock_id=lock_id,
+        actor_id=actor_id,
+        commit=True,
+    )
 
 
 __all__ = ["router"]

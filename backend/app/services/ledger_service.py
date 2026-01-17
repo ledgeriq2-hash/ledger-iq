@@ -5,7 +5,8 @@ from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -19,6 +20,19 @@ STATUS_DRAFT = "Draft"
 STATUS_POSTED = "Posted"
 STATUS_REVERSED = "Reversed"
 DEFAULT_BASE_CURRENCY = "USD"
+REVERSAL_UNIQUE_CONSTRAINT = "ux_journal_entries_reversed_of_id"
+
+
+def _is_unique_reversal_violation(exc: IntegrityError) -> bool:
+    origin = getattr(exc, "orig", None)
+    constraint_name = getattr(getattr(origin, "diag", None), "constraint_name", None)
+    if constraint_name:
+        return constraint_name == REVERSAL_UNIQUE_CONSTRAINT
+    message = str(origin or exc)
+    if REVERSAL_UNIQUE_CONSTRAINT in message:
+        return True
+    lowered = message.lower()
+    return "reversed_of_id" in lowered and "unique" in lowered
 
 
 @dataclass(slots=True)
@@ -147,6 +161,17 @@ class LedgerService:
                 http_status=404,
             )
         return entry
+
+    async def _has_reversal_entry(self, entry_id: uuid.UUID) -> bool:
+        stmt = select(JournalEntry.id).where(
+            JournalEntry.tenant_id == self.tenant_id,
+            or_(
+                JournalEntry.reversed_of_id == entry_id,
+                JournalEntry.reversal_of_entry_id == entry_id,
+            ),
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none() is not None
 
     async def create_manual_entry(
         self,
@@ -288,12 +313,19 @@ class LedgerService:
                 message="Only posted entries can be reversed",
                 http_status=409,
             )
+        if await self._has_reversal_entry(entry.id):
+            raise AppException(
+                code="journal_already_reversed",
+                message="Journal entry has already been reversed",
+                http_status=409,
+            )
 
         # MUST check lock on the ORIGINAL entry's entry_date per Sprint 2 spec.
         guard = PeriodGuard(session=self.session)
         await guard.assert_open(tenant_id=self.tenant_id, entry_date=entry.entry_date)
 
         reversal_date = date.today()
+        await guard.assert_open(tenant_id=self.tenant_id, entry_date=reversal_date)
         base_currency = self._normalize_currency(entry.base_currency)
         normalized_lines = self.validate_lines(entry.ledger_lines, base_currency)
 
@@ -333,8 +365,18 @@ class LedgerService:
             is_posted=True,
             currency_code=base_currency,
         )
-        self.session.add(reversal_entry)
-        await self.session.flush()
+        try:
+            self.session.add(reversal_entry)
+            await self.session.flush()
+        except IntegrityError as exc:
+            await self.session.rollback()
+            if _is_unique_reversal_violation(exc):
+                raise AppException(
+                    code="journal_already_reversed",
+                    message="Journal entry has already been reversed",
+                    http_status=409,
+                ) from exc
+            raise
 
         for index, line in enumerate(normalized_lines, start=1):
             self.session.add(
@@ -369,8 +411,17 @@ class LedgerService:
             period_month=reversal_entry.period_month,
             commit=False,
         )
-
-        await self.session.commit()
+        try:
+            await self.session.commit()
+        except IntegrityError as exc:
+            await self.session.rollback()
+            if _is_unique_reversal_violation(exc):
+                raise AppException(
+                    code="journal_already_reversed",
+                    message="Journal entry has already been reversed",
+                    http_status=409,
+                ) from exc
+            raise
         return await self._load_entry(reversal_entry.id, include_lines=True)
 
 

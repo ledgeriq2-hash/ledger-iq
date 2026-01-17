@@ -2,10 +2,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import Depends
-from fastapi import HTTPException, status
+from fastapi import Depends, status
 
 from app.api import deps
+from app.core.exceptions import AppException
 
 OWNER = "owner"
 ADMIN = "admin"
@@ -50,6 +50,59 @@ def _extract_roles(user: Any) -> set[str]:
     return roles
 
 
+def _normalize_codes(raw_codes: Any) -> set[str]:
+    if raw_codes is None:
+        return set()
+    if isinstance(raw_codes, str):
+        return {raw_codes}
+    if isinstance(raw_codes, (list, tuple, set, frozenset)):
+        return {str(code) for code in raw_codes if code is not None}
+    return set()
+
+
+def _extract_permissions_payload(user: Any) -> dict[str, Any]:
+    if user is None:
+        return {}
+    if isinstance(user, dict):
+        permissions = user.get("permissions")
+        if isinstance(permissions, dict):
+            return permissions
+        permissions_json = user.get("permissions_json")
+        if isinstance(permissions_json, dict):
+            return permissions_json
+    if hasattr(user, "permissions_json") and isinstance(user.permissions_json, dict):
+        return user.permissions_json
+    role = getattr(user, "role", None)
+    if role is not None and isinstance(getattr(role, "permissions_json", None), dict):
+        return role.permissions_json
+    return {}
+
+
+def _has_permission(user: Any, permission_code: str) -> bool:
+    roles = _extract_roles(user)
+    if roles.intersection({OWNER, ADMIN}):
+        return True
+
+    permissions = _extract_permissions_payload(user)
+    if permissions:
+        if permissions.get("all") is True:
+            return True
+        codes = _normalize_codes(permissions.get("codes") or permissions.get("permissions"))
+        if permission_code in codes:
+            return True
+        if permissions.get("accounting") is True and permission_code.startswith(("journal.", "coa.", "period.")):
+            return True
+        if permissions.get("read_only") is True and permission_code.endswith(".view"):
+            return True
+
+    if hasattr(user, "permissions"):
+        codes = _normalize_codes(getattr(user, "permissions"))
+        if permission_code in codes:
+            return True
+
+    return False
+
+
 def require_roles(roles: list[str]):
     """
     Dependency placeholder for role-based access control.
@@ -67,10 +120,32 @@ def require_roles(roles: list[str]):
         required = {role.lower() for role in roles}
         current_roles = _extract_roles(current_user)
         if not current_roles.intersection(required):
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
+            raise AppException(
+                code="permission_denied",
+                message="Insufficient permissions",
+                http_status=status.HTTP_403_FORBIDDEN,
+            )
         return current_user
 
     return dependency
 
 
-__all__ = ["OWNER", "ADMIN", "ACCOUNTANT", "VIEWER", "require_roles"]
+def require_perm(permission_code: str):
+    if not permission_code:
+        raise ValueError("permission_code must be provided")
+
+    async def dependency(current_user=Depends(deps.get_current_active_user)):
+        if getattr(current_user, "is_superuser", False):
+            return current_user
+        if not _has_permission(current_user, permission_code):
+            raise AppException(
+                code="permission_denied",
+                message="Insufficient permissions",
+                http_status=status.HTTP_403_FORBIDDEN,
+            )
+        return current_user
+
+    return dependency
+
+
+__all__ = ["OWNER", "ADMIN", "ACCOUNTANT", "VIEWER", "require_roles", "require_perm"]

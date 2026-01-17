@@ -5,7 +5,8 @@ from datetime import UTC, datetime, date
 from decimal import Decimal
 from typing import Any, Sequence
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -24,6 +25,22 @@ def _to_dict(payload: Any, *, exclude_unset: bool = False) -> dict[str, Any]:
     if isinstance(payload, dict):
         return payload
     raise TypeError("payload must be a mapping or pydantic model")
+
+
+def _entry_is_posted(entry: JournalEntry) -> bool:
+    return bool(entry.is_posted) or str(entry.status or "").lower() == "posted"
+
+
+async def _has_reversal_entry(session: AsyncSession, tenant_id: uuid.UUID, entry_id: uuid.UUID) -> bool:
+    stmt = select(JournalEntry.id).where(
+        JournalEntry.tenant_id == tenant_id,
+        or_(
+            JournalEntry.reversed_of_id == entry_id,
+            JournalEntry.reversal_of_entry_id == entry_id,
+        ),
+    )
+    result = await session.execute(stmt)
+    return result.scalar_one_or_none() is not None
 
 
 async def _load_entry(session: AsyncSession, tenant_id: uuid.UUID, entry_id: uuid.UUID, *, include_lines: bool = False) -> JournalEntry | None:
@@ -105,7 +122,20 @@ async def create_journal_entry(
 async def update_journal_entry(
     session: AsyncSession, tenant_id: uuid.UUID, entry_id: uuid.UUID, payload: Any
 ) -> JournalEntry | None:
-    _ = session, tenant_id, entry_id, payload
+    _ = payload
+    entry = await get_journal_entry(session, tenant_id, entry_id)
+    if not entry:
+        raise AppException(
+            code="journal_entry_not_found",
+            message="Journal entry not found",
+            http_status=404,
+        )
+    if _entry_is_posted(entry):
+        raise AppException(
+            code="journal_posted_immutable",
+            message="Posted journal entries are immutable",
+            http_status=409,
+        )
     raise AppException(
         code="journal_updates_disabled",
         message="Updating journal entries is disabled; create a new correction entry instead",
@@ -169,7 +199,19 @@ async def create_reversing_entry_impl(
 
 
 async def delete_journal_entry(session: AsyncSession, tenant_id: uuid.UUID, entry_id: uuid.UUID) -> bool:
-    _ = session, tenant_id, entry_id
+    entry = await get_journal_entry(session, tenant_id, entry_id)
+    if not entry:
+        raise AppException(
+            code="journal_entry_not_found",
+            message="Journal entry not found",
+            http_status=404,
+        )
+    if _entry_is_posted(entry):
+        raise AppException(
+            code="journal_posted_immutable",
+            message="Posted journal entries are immutable",
+            http_status=409,
+        )
     raise AppException(code="deletes_disabled", message="Deleting journal entries is disabled", http_status=405)
 
 
@@ -208,7 +250,15 @@ async def reverse_journal_entry(
             message="Journal entry has already been reversed",
             http_status=409,
         )
+    if await _has_reversal_entry(session, tenant_id, entry.id):
+        raise AppException(
+            code="journal_already_reversed",
+            message="Journal entry has already been reversed",
+            http_status=409,
+        )
     await _ensure_period_open(session, tenant_id, entry.date)
+    reversal_date = datetime.now(UTC).date()
+    await _ensure_period_open(session, tenant_id, reversal_date)
 
     lines = [
         LedgerLineInput(
@@ -258,21 +308,32 @@ async def reverse_journal_entry(
         "adjustment_reason": reason,
     }
 
-    result = await record_financial_transaction(
-        session,
-        RecordFinancialTransactionInput(
-            tenant_id=tenant_id,
-            actor_id=actor_id,
-            date=datetime.now(UTC).date(),
-            description=reason or f"Reversal of {entry.id}",
-            reference_type=entry.source_module or entry.reference or "journal_reversal",
-            reference_id=entry.id,
-            lines=lines,
-            treasury_movement=treasury_movement,
-            entry_metadata=metadata,
-        ),
-        commit=True,
-    )
+    try:
+        result = await record_financial_transaction(
+            session,
+            RecordFinancialTransactionInput(
+                tenant_id=tenant_id,
+                actor_id=actor_id,
+                date=reversal_date,
+                description=reason or f"Reversal of {entry.id}",
+                reference_type=entry.source_module or entry.reference or "journal_reversal",
+                reference_id=entry.id,
+                lines=lines,
+                treasury_movement=treasury_movement,
+                entry_metadata=metadata,
+            ),
+            commit=True,
+        )
+    except IntegrityError as exc:
+        await session.rollback()
+        message = str(getattr(exc, "orig", exc))
+        if "ux_journal_entries_reversed_of_id" in message or "reversed_of_id" in message:
+            raise AppException(
+                code="journal_already_reversed",
+                message="Journal entry has already been reversed",
+                http_status=409,
+            ) from exc
+        raise
 
     reversed_entry = await get_journal_entry(session, tenant_id, result.journal_entry_id)
     if reversed_entry is None:
@@ -317,8 +378,8 @@ async def void_journal_entry(
         raise AppException(code="journal_entry_voided", message="Journal entry already voided", http_status=409)
     if entry.is_posted:
         raise AppException(
-            code="journal_void_posted_disallowed",
-            message="Posted journal entries must be corrected via reversal or adjustment",
+            code="journal_posted_immutable",
+            message="Posted journal entries are immutable",
             http_status=409,
         )
 
@@ -368,6 +429,12 @@ async def adjust_journal_entry(
         raise AppException(code="journal_entry_not_found", message="Journal entry not found", http_status=404)
     if entry.is_voided:
         raise AppException(code="journal_entry_voided", message="Cannot adjust a voided entry", http_status=409)
+    if _entry_is_posted(entry):
+        raise AppException(
+            code="journal_posted_immutable",
+            message="Posted journal entries can only be reversed",
+            http_status=409,
+        )
     await _ensure_period_open(session, tenant_id, datetime.now(UTC).date())
 
     existing = await session.execute(

@@ -141,6 +141,12 @@ class JournalEntry(BaseModel):
         Index("ix_journal_entries_entry_date", "entry_date"),
         Index("ix_journal_entries_period_year_month", "period_year", "period_month"),
         Index("ix_journal_entries_source_type_id", "source_type", "source_id"),
+        Index(
+            "ux_journal_entries_reversed_of_id",
+            "reversed_of_id",
+            unique=True,
+            postgresql_where=text("reversed_of_id IS NOT NULL"),
+        ),
     )
 
 
