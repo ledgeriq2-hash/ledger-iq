@@ -38,6 +38,9 @@ def _resolve_env_file() -> str | None:
         Path(__file__).resolve().parents[2],  # backend directory
     ]
     for base_path in base_paths:
+        candidate = base_path / ".env.local"
+        if candidate.exists():
+            return str(candidate)
         candidate = base_path / f".env.{environment}"
         if candidate.exists():
             return str(candidate)
