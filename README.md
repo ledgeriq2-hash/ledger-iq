@@ -87,6 +87,46 @@ npm run dev
 
 Frontend: `http://localhost:5173`
 
+## Sprint 2 verification (COA + Ledger)
+```powershell
+$tenantId = "<paste-tenant-uuid>"
+
+# migrate + seed
+docker compose exec backend alembic upgrade head
+docker compose exec backend python -m app.initial_data
+
+# fetch system accounts
+$accounts = Invoke-RestMethod -Method Get "http://localhost:8000/api/v1/accounts" `
+  -Headers @{ "X-Tenant-Id" = $tenantId }
+$cashId = ($accounts.items | Where-Object { $_.code -eq "1100" }).id
+$revenueId = ($accounts.items | Where-Object { $_.code -eq "4000" }).id
+
+# create manual journal draft
+$draft = Invoke-RestMethod -Method Post "http://localhost:8000/api/v1/journals/manual" `
+  -Headers @{ "X-Tenant-Id" = $tenantId } `
+  -ContentType "application/json" `
+  -Body (@{
+    entry_date = (Get-Date).ToString("yyyy-MM-dd")
+    base_currency = "USD"
+    memo = "Sprint 2 test entry"
+    source_type = "manual"
+    lines = @(
+      @{ account_id = $cashId; debit_amount = 100; credit_amount = 0; line_currency = "USD" }
+      @{ account_id = $revenueId; debit_amount = 0; credit_amount = 100; line_currency = "USD" }
+    )
+  } | ConvertTo-Json -Depth 6)
+
+# post draft
+Invoke-RestMethod -Method Post "http://localhost:8000/api/v1/journals/$($draft.id)/post" `
+  -Headers @{ "X-Tenant-Id" = $tenantId }
+
+# reverse posted entry
+Invoke-RestMethod -Method Post "http://localhost:8000/api/v1/journals/$($draft.id)/reverse" `
+  -Headers @{ "X-Tenant-Id" = $tenantId } `
+  -ContentType "application/json" `
+  -Body (@{ reason = "Sprint 2 reversal" } | ConvertTo-Json)
+```
+
 ## Call AI endpoints (PowerShell)
 All API calls require `X-Tenant-Id` (UUID). These examples work in local dev even if `CSRF_ENABLED=true`.
 

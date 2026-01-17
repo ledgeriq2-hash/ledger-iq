@@ -16,10 +16,12 @@ def _include(router_obj: APIRouter, *, prefix: str, tags: list[str]) -> None:
         router.include_router(router_obj, tags=tags)
 
 
+from app.api.v1.accounts import router as accounts_router
 from app.api.v1.customers import router as customers_router
 from app.api.v1.employees import router as employees_router
 from app.api.v1.feedback import router as feedback_router
 from app.api.v1.inventory import router as inventory_router
+from app.api.v1.journals import router as journals_router
 from app.api.v1.notifications import router as notifications_router
 from app.api.v1.products import router as products_router
 from app.api.v1.roles import router as roles_router
@@ -27,10 +29,12 @@ from app.api.v1.suppliers import router as suppliers_router
 from app.api.v1.tenants import router as tenants_router
 from app.api.v1.treasury import router as treasury_router
 
+_include(accounts_router, prefix="/v1", tags=["accounts"])
 _include(customers_router, prefix="/v1", tags=["customers"])
 _include(employees_router, prefix="/v1", tags=["employees"])
 _include(feedback_router, prefix="/v1", tags=["feedback"])
 _include(inventory_router, prefix="/v1", tags=["inventory"])
+_include(journals_router, prefix="/v1", tags=["journals"])
 _include(notifications_router, prefix="/v1", tags=["notifications"])
 _include(products_router, prefix="/v1", tags=["products"])
 _include(roles_router, prefix="/v1", tags=["roles"])

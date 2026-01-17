@@ -10,6 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.database import async_session_maker
+from app.models.account import Account
+from app.models.account_mapping import AccountMapping
 from app.models.chart_of_account import AccountType, ChartOfAccount
 from app.models.role import Role
 from app.models.tenant import Tenant
@@ -27,6 +29,15 @@ DEFAULT_ROLES = [
     {"name": "VIEWER", "permissions_json": {"read_only": True}},
 ]
 
+DEFAULT_PERMISSION_CODES = [
+    "coa.view",
+    "coa.manage",
+    "journal.view",
+    "journal.manual.create",
+    "journal.post",
+    "journal.reverse",
+]
+
 DEFAULT_ACCOUNTS = [
     {"code": "1000", "name": "Cash", "type": AccountType.ASSET},
     {"code": "1100", "name": "Accounts Receivable", "type": AccountType.ASSET},
@@ -34,6 +45,25 @@ DEFAULT_ACCOUNTS = [
     {"code": "4000", "name": "Revenue", "type": AccountType.REVENUE},
     {"code": "5000", "name": "Expense", "type": AccountType.EXPENSE},
 ]
+
+DEFAULT_SYSTEM_ACCOUNTS = [
+    {"code": "1100", "name": "Cash", "type": "ASSET", "normal_balance": "debit"},
+    {"code": "1200", "name": "Bank", "type": "ASSET", "normal_balance": "debit"},
+    {"code": "1300", "name": "Accounts Receivable", "type": "ASSET", "normal_balance": "debit"},
+    {"code": "2100", "name": "Accounts Payable", "type": "LIABILITY", "normal_balance": "credit"},
+    {"code": "2200", "name": "Tax Payable", "type": "LIABILITY", "normal_balance": "credit"},
+    {"code": "4000", "name": "Revenue", "type": "INCOME", "normal_balance": "credit"},
+    {"code": "5000", "name": "Expenses", "type": "EXPENSE", "normal_balance": "debit"},
+    {"code": "6100", "name": "FX Gain/Loss", "type": "INCOME", "normal_balance": "credit"},
+]
+
+DEFAULT_ACCOUNT_MAPPINGS = {
+    "AR_CONTROL": "1300",
+    "AP_CONTROL": "2100",
+    "CASH_DEFAULT": "1100",
+    "TAX_PAYABLE": "2200",
+    "FX_GAIN_LOSS": "6100",
+}
 
 
 async def _ensure_roles(session: AsyncSession, tenant_id: UUID | None) -> list[Role]:
@@ -51,6 +81,16 @@ async def _ensure_roles(session: AsyncSession, tenant_id: UUID | None) -> list[R
     if created:
         await session.flush()
 
+    admin_role = existing.get("ADMIN") or next((role for role in created if role.name.upper() == "ADMIN"), None)
+    if admin_role:
+        permissions = admin_role.permissions_json if isinstance(admin_role.permissions_json, dict) else {}
+        codes = permissions.get("codes") or []
+        if not isinstance(codes, list):
+            codes = list(codes) if isinstance(codes, (set, tuple)) else []
+        merged_codes = sorted(set(codes).union(DEFAULT_PERMISSION_CODES))
+        permissions["codes"] = merged_codes
+        admin_role.permissions_json = permissions
+
     return list(existing.values()) + created
 
 
@@ -67,6 +107,68 @@ async def _ensure_chart_of_accounts(
         account = ChartOfAccount(**account_payload, tenant_id=tenant_id)
         session.add(account)
         created.append(account)
+
+    if created:
+        await session.flush()
+
+    return list(existing.values()) + created
+
+
+async def _ensure_system_accounts(session: AsyncSession, tenant_id: UUID | None) -> list[Account]:
+    result = await session.execute(select(Account).where(Account.tenant_id == tenant_id))
+    existing = {account.code: account for account in result.scalars().all()}
+
+    created: list[Account] = []
+    for payload in DEFAULT_SYSTEM_ACCOUNTS:
+        if payload["code"] in existing:
+            continue
+        account = Account(
+            tenant_id=tenant_id,
+            code=payload["code"],
+            name=payload["name"],
+            type=payload["type"],
+            normal_balance=payload["normal_balance"],
+            is_system=True,
+            is_active=True,
+        )
+        session.add(account)
+        created.append(account)
+
+    if created:
+        await session.flush()
+
+    return list(existing.values()) + created
+
+
+async def _ensure_account_mappings(
+    session: AsyncSession,
+    tenant_id: UUID | None,
+    accounts: Iterable[Account],
+) -> list[AccountMapping]:
+    if tenant_id is None:
+        return []
+
+    result = await session.execute(select(AccountMapping).where(AccountMapping.tenant_id == tenant_id))
+    existing = {mapping.key: mapping for mapping in result.scalars().all()}
+    accounts_by_code = {account.code: account for account in accounts}
+
+    created: list[AccountMapping] = []
+    for key, account_code in DEFAULT_ACCOUNT_MAPPINGS.items():
+        account = accounts_by_code.get(account_code)
+        if not account:
+            continue
+        mapping = existing.get(key)
+        if mapping:
+            if mapping.account_id != account.id:
+                mapping.account_id = account.id
+            continue
+        mapping = AccountMapping(
+            tenant_id=tenant_id,
+            key=key,
+            account_id=account.id,
+        )
+        session.add(mapping)
+        created.append(mapping)
 
     if created:
         await session.flush()
@@ -186,13 +288,15 @@ def _apply_app_settings_defaults(tenant: Tenant) -> bool:
 async def seed_tenant(session: AsyncSession, tenant: Tenant | None) -> None:
     tenant_id = tenant.id if tenant else None
     roles = await _ensure_roles(session, tenant_id)
-    accounts = await _ensure_chart_of_accounts(session, tenant_id)
+    chart_accounts = await _ensure_chart_of_accounts(session, tenant_id)
+    system_accounts = await _ensure_system_accounts(session, tenant_id)
+    account_mappings = await _ensure_account_mappings(session, tenant_id, system_accounts)
     treasury = await _ensure_default_treasury(session, tenant_id)
-    mapping_changed = bool(tenant and _apply_account_mapping(tenant, accounts))
+    mapping_changed = bool(tenant and _apply_account_mapping(tenant, chart_accounts))
     settings_changed = bool(tenant and _apply_app_settings_defaults(tenant))
-    if roles or accounts or mapping_changed or settings_changed or treasury:
+    if roles or chart_accounts or system_accounts or account_mappings or mapping_changed or settings_changed or treasury:
         await session.commit()
-        for entity in roles + accounts:
+        for entity in roles + chart_accounts + system_accounts + account_mappings:
             await session.refresh(entity)
         await session.refresh(treasury)
         if mapping_changed and tenant:
@@ -202,8 +306,12 @@ async def seed_tenant(session: AsyncSession, tenant: Tenant | None) -> None:
 
     if roles:
         logger.info("Ensured %s roles for tenant %s", len(roles), tenant_id or "GLOBAL")
-    if accounts:
-        logger.info("Ensured %s chart accounts for tenant %s", len(accounts), tenant_id or "GLOBAL")
+    if chart_accounts:
+        logger.info("Ensured %s chart accounts for tenant %s", len(chart_accounts), tenant_id or "GLOBAL")
+    if system_accounts:
+        logger.info("Ensured %s system accounts for tenant %s", len(system_accounts), tenant_id or "GLOBAL")
+    if account_mappings:
+        logger.info("Ensured %s account mappings for tenant %s", len(account_mappings), tenant_id or "GLOBAL")
     if mapping_changed and tenant:
         logger.info("Updated account mappings for tenant %s", tenant.slug)
     if settings_changed and tenant:

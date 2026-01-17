@@ -90,7 +90,7 @@ def _get_alembic_database_url() -> str:
         url = url.set(drivername="postgresql+psycopg")
     elif url.drivername == "postgresql+psycopg2":
         url = url.set(drivername="postgresql+psycopg")
-    return str(url)
+    return url.render_as_string(hide_password=False)
 
 
 _import_all_models()
