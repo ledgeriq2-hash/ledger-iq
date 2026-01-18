@@ -24,8 +24,13 @@ class PermissionCode(str, Enum):
     JOURNAL_MANUAL_CREATE = "journal.manual.create"
     JOURNAL_POST = "journal.post"
     JOURNAL_REVERSE = "journal.reverse"
+    JOURNAL_DIMENSION_ASSIGN = "journal.dimension.assign"
     PERIOD_LOCK = "period.lock"
     PERIOD_UNLOCK = "period.unlock"
+    DIMENSION_VIEW = "dimension.view"
+    DIMENSION_MANAGE = "dimension.manage"
+    DIMENSION_VALUE_VIEW = "dimension_value.view"
+    DIMENSION_VALUE_MANAGE = "dimension_value.manage"
 
 
 PERMISSION_CATALOG = tuple(code.value for code in PermissionCode)
@@ -115,7 +120,9 @@ def _has_permission(user: Any, permission_code: str) -> bool:
         codes = _normalize_codes(permissions.get("codes") or permissions.get("permissions"))
         if permission_code in codes:
             return True
-        if permissions.get("accounting") is True and permission_code.startswith(("journal.", "coa.", "period.")):
+        if permissions.get("accounting") is True and permission_code.startswith(
+            ("journal.", "coa.", "period.", "dimension.", "dimension_value.")
+        ):
             return True
         if permissions.get("read_only") is True and permission_code.endswith(".view"):
             return True

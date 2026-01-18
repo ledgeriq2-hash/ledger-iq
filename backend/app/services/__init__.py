@@ -31,4 +31,7 @@ __all__ = [
     "debt_service",
     "settings_service",
     "ai_insights_service",
+    "dimension_service",
+    "dimension_value_service",
+    "journal_line_dimension_service",
 ]

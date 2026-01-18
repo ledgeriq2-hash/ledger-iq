@@ -14,6 +14,8 @@ from app.models.cashflow_category import CashflowCategory
 from app.models.chart_of_account import ChartOfAccount
 from app.models.customer import Customer
 from app.models.data_snapshot import DataSnapshot
+from app.models.dimension import Dimension
+from app.models.dimension_value import DimensionValue
 from app.models.employee import Employee, EmployeeStatus
 from app.models.error_event import ErrorEvent
 from app.models.expense import Expense
@@ -24,6 +26,7 @@ from app.models.invoice_item import InvoiceItem
 from app.models.journal_entry import JournalEntry
 from app.models.journal_entry_line import JournalEntryLine
 from app.models.journal_line import JournalLine
+from app.models.journal_line_dimension import JournalLineDimension
 from app.models.notification import Notification
 from app.models.payment import Payment
 from app.models.portal_token import PortalToken
@@ -58,6 +61,8 @@ ALL_MODELS = [
     ChartOfAccount,
     Customer,
     DataSnapshot,
+    Dimension,
+    DimensionValue,
     Employee,
     EmployeeStatus,
     ErrorEvent,
@@ -69,6 +74,7 @@ ALL_MODELS = [
     JournalEntry,
     JournalEntryLine,
     JournalLine,
+    JournalLineDimension,
     Notification,
     Payment,
     PortalToken,
@@ -105,6 +111,8 @@ __all__ = [
     "ChartOfAccount",
     "Customer",
     "DataSnapshot",
+    "Dimension",
+    "DimensionValue",
     "Employee",
     "EmployeeStatus",
     "ErrorEvent",
@@ -116,6 +124,7 @@ __all__ = [
     "JournalEntry",
     "JournalEntryLine",
     "JournalLine",
+    "JournalLineDimension",
     "Notification",
     "Payment",
     "PortalToken",
