@@ -8,15 +8,18 @@ from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.exceptions import AppException
 from app.core.redis import get_redis
 from app.core.settings_utils import TenantSettingsError
+from app.models.account import Account
 from app.models.chart_of_account import AccountType, ChartOfAccount
 from app.models.journal_entry import JournalEntry
 from app.models.journal_entry_line import JournalEntryLine
+from app.models.journal_line import JournalLine
 from app.models.reports_cache import ReportsCache
 from app.services.accounting_mapping import get_account_mapping
 
@@ -155,6 +158,141 @@ async def get_report_data(
 
 def _decimal(value: Any) -> Decimal:
     return Decimal(str(value or 0))
+
+
+def _posted_entry_clause():
+    return or_(
+        JournalEntry.is_posted.is_(True),
+        func.lower(JournalEntry.status) == "posted",
+    )
+
+
+def _normalize_currency(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip().upper()
+    return normalized or None
+
+
+async def _ensure_single_currency(
+    session: AsyncSession,
+    tenant_id: UUID,
+    *,
+    from_date: date | None,
+    to_date: date | None,
+    account_id: UUID | None = None,
+) -> str | None:
+    if to_date is None:
+        return None
+
+    base_stmt = (
+        select(func.distinct(JournalEntry.base_currency))
+        .join(JournalLine, JournalLine.entry_id == JournalEntry.id)
+        .where(
+            JournalEntry.tenant_id == tenant_id,
+            JournalLine.tenant_id == tenant_id,
+            _posted_entry_clause(),
+            JournalEntry.is_voided.is_(False),
+            JournalEntry.entry_date <= to_date,
+        )
+    )
+    if from_date is not None:
+        base_stmt = base_stmt.where(JournalEntry.entry_date >= from_date)
+    if account_id is not None:
+        base_stmt = base_stmt.where(JournalLine.account_id == account_id)
+    base_result = await session.execute(base_stmt)
+    base_currencies = {
+        _normalize_currency(row[0])
+        for row in base_result.fetchall()
+        if _normalize_currency(row[0]) is not None
+    }
+
+    if len(base_currencies) > 1:
+        raise AppException(
+            code="mixed_currency_report",
+            message="Report data contains multiple base currencies; single-currency reports only.",
+            http_status=422,
+        )
+
+    line_stmt = (
+        select(func.distinct(JournalLine.line_currency))
+        .join(JournalEntry, JournalEntry.id == JournalLine.entry_id)
+        .where(
+            JournalEntry.tenant_id == tenant_id,
+            JournalLine.tenant_id == tenant_id,
+            _posted_entry_clause(),
+            JournalEntry.is_voided.is_(False),
+            JournalEntry.entry_date <= to_date,
+        )
+    )
+    if from_date is not None:
+        line_stmt = line_stmt.where(JournalEntry.entry_date >= from_date)
+    if account_id is not None:
+        line_stmt = line_stmt.where(JournalLine.account_id == account_id)
+    line_result = await session.execute(line_stmt)
+    line_currencies = {
+        _normalize_currency(row[0])
+        for row in line_result.fetchall()
+        if _normalize_currency(row[0]) is not None
+    }
+
+    if len(line_currencies) > 1:
+        raise AppException(
+            code="mixed_currency_report",
+            message="Report data contains multiple line currencies; single-currency reports only.",
+            http_status=422,
+        )
+
+    base_currency = next(iter(base_currencies), None)
+    line_currency = next(iter(line_currencies), None)
+    if base_currency and line_currency and base_currency != line_currency:
+        raise AppException(
+            code="mixed_currency_report",
+            message="Report data contains mixed currencies; single-currency reports only.",
+            http_status=422,
+        )
+
+    return base_currency or line_currency
+
+
+async def _ledger_account_sums(
+    session: AsyncSession,
+    tenant_id: UUID,
+    *,
+    from_date: date | None = None,
+    to_date: date | None = None,
+    before_date: date | None = None,
+    account_ids: Sequence[UUID] | None = None,
+) -> dict[UUID, dict[str, Decimal]]:
+    stmt = (
+        select(
+            JournalLine.account_id,
+            func.coalesce(func.sum(JournalLine.debit_base), 0).label("debit"),
+            func.coalesce(func.sum(JournalLine.credit_base), 0).label("credit"),
+        )
+        .join(JournalEntry, JournalEntry.id == JournalLine.entry_id)
+        .where(
+            JournalEntry.tenant_id == tenant_id,
+            JournalLine.tenant_id == tenant_id,
+            _posted_entry_clause(),
+            JournalEntry.is_voided.is_(False),
+        )
+    )
+    if from_date is not None:
+        stmt = stmt.where(JournalEntry.entry_date >= from_date)
+    if to_date is not None:
+        stmt = stmt.where(JournalEntry.entry_date <= to_date)
+    if before_date is not None:
+        stmt = stmt.where(JournalEntry.entry_date < before_date)
+    if account_ids:
+        stmt = stmt.where(JournalLine.account_id.in_(account_ids))
+
+    stmt = stmt.group_by(JournalLine.account_id)
+    result = await session.execute(stmt)
+    totals: dict[UUID, dict[str, Decimal]] = {}
+    for account_id, debit, credit in result.fetchall():
+        totals[account_id] = {"debit": _decimal(debit), "credit": _decimal(credit)}
+    return totals
 
 
 async def _account_aggregates(
@@ -354,6 +492,200 @@ async def get_trial_balance(session: AsyncSession, tenant_id: UUID, as_of_date: 
         "accounts": trial_accounts,
         "totals": {"debit": total_debit, "credit": total_credit, "difference": total_debit - total_credit},
     }
+
+
+async def get_trial_balance_range(
+    session: AsyncSession,
+    tenant_id: UUID,
+    *,
+    from_date: date,
+    to_date: date,
+    include_zero: bool = False,
+) -> dict[str, Any]:
+    if from_date > to_date:
+        raise AppException(
+            code="invalid_date_range",
+            message="from_date must be on or before to_date",
+            http_status=422,
+        )
+
+    await _ensure_single_currency(session, tenant_id, from_date=None, to_date=to_date)
+
+    opening_totals = await _ledger_account_sums(
+        session,
+        tenant_id,
+        before_date=from_date,
+    )
+    period_totals = await _ledger_account_sums(
+        session,
+        tenant_id,
+        from_date=from_date,
+        to_date=to_date,
+    )
+
+    result = await session.execute(
+        select(Account).where(Account.tenant_id == tenant_id).order_by(Account.code)
+    )
+    accounts = result.scalars().all()
+
+    rows: list[dict[str, Any]] = []
+    total_debits = Decimal("0")
+    total_credits = Decimal("0")
+
+    for account in accounts:
+        opening = opening_totals.get(account.id, {"debit": Decimal("0"), "credit": Decimal("0")})
+        period = period_totals.get(account.id, {"debit": Decimal("0"), "credit": Decimal("0")})
+
+        opening_balance = opening["debit"] - opening["credit"]
+        period_debits = period["debit"]
+        period_credits = period["credit"]
+        closing_balance = opening_balance + period_debits - period_credits
+
+        is_zero = (
+            opening_balance == 0
+            and period_debits == 0
+            and period_credits == 0
+            and closing_balance == 0
+        )
+        if is_zero and not include_zero:
+            continue
+
+        rows.append(
+            {
+                "account_id": account.id,
+                "account_code": account.code,
+                "account_name": account.name,
+                "account_type": account.type,
+                "opening_balance": opening_balance,
+                "period_debits": period_debits,
+                "period_credits": period_credits,
+                "closing_balance": closing_balance,
+            }
+        )
+
+        total_debits += period_debits
+        total_credits += period_credits
+
+    return {
+        "period": {"from": from_date, "to": to_date},
+        "accounts": rows,
+        "totals": {
+            "period_debits": total_debits,
+            "period_credits": total_credits,
+            "difference": total_debits - total_credits,
+        },
+    }
+
+
+async def get_general_ledger(
+    session: AsyncSession,
+    tenant_id: UUID,
+    *,
+    account_id: UUID,
+    from_date: date,
+    to_date: date,
+) -> dict[str, Any]:
+    if from_date > to_date:
+        raise AppException(
+            code="invalid_date_range",
+            message="from_date must be on or before to_date",
+            http_status=422,
+        )
+
+    account = await session.get(Account, account_id)
+    if not account or account.tenant_id != tenant_id:
+        raise AppException(
+            code="account_not_found",
+            message="Account not found",
+            http_status=404,
+        )
+
+    await _ensure_single_currency(
+        session,
+        tenant_id,
+        from_date=None,
+        to_date=to_date,
+        account_id=account_id,
+    )
+
+    opening_totals = await _ledger_account_sums(
+        session,
+        tenant_id,
+        before_date=from_date,
+        account_ids=[account_id],
+    )
+    opening = opening_totals.get(account_id, {"debit": Decimal("0"), "credit": Decimal("0")})
+    running_balance = opening["debit"] - opening["credit"]
+
+    stmt = (
+        select(
+            JournalEntry.entry_date,
+            JournalEntry.id.label("journal_id"),
+            JournalLine.entry_id.label("entry_id"),
+            JournalLine.id.label("line_id"),
+            JournalEntry.description,
+            JournalEntry.memo,
+            JournalLine.memo.label("line_memo"),
+            JournalLine.debit_base,
+            JournalLine.credit_base,
+        )
+        .join(JournalEntry, JournalEntry.id == JournalLine.entry_id)
+        .where(
+            JournalEntry.tenant_id == tenant_id,
+            JournalLine.tenant_id == tenant_id,
+            JournalLine.account_id == account_id,
+            _posted_entry_clause(),
+            JournalEntry.is_voided.is_(False),
+            JournalEntry.entry_date >= from_date,
+            JournalEntry.entry_date <= to_date,
+        )
+        .order_by(
+            JournalEntry.entry_date.asc(),
+            JournalEntry.id.asc(),
+            JournalLine.line_no.asc(),
+            JournalLine.id.asc(),
+        )
+    )
+    result = await session.execute(stmt)
+
+    lines: list[dict[str, Any]] = []
+    for (
+        entry_date,
+        journal_id,
+        entry_id,
+        line_id,
+        description,
+        memo,
+        line_memo,
+        debit_base,
+        credit_base,
+    ) in result.fetchall():
+        debit = _decimal(debit_base)
+        credit = _decimal(credit_base)
+        running_balance += debit - credit
+        lines.append(
+            {
+                "journal_date": entry_date,
+                "journal_id": journal_id,
+                "entry_id": entry_id,
+                "line_id": line_id,
+                "description": line_memo or memo or description,
+                "debit": debit,
+                "credit": credit,
+                "running_balance": running_balance,
+            }
+        )
+
+    return {
+        "account_id": account.id,
+        "account_code": account.code,
+        "account_name": account.name,
+        "account_type": account.type,
+        "period": {"from": from_date, "to": to_date},
+        "opening_balance": opening["debit"] - opening["credit"],
+        "closing_balance": running_balance,
+        "lines": lines,
+    }
 __all__ = [
     "list_report_cache",
     "get_report_cache",
@@ -365,4 +697,6 @@ __all__ = [
     "get_balance_sheet",
     "get_cashflow_statement",
     "get_trial_balance",
+    "get_trial_balance_range",
+    "get_general_ledger",
 ]

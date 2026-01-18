@@ -10,6 +10,7 @@ from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import deps
+from app.core.exceptions import AppException
 from app.core.permissions import ACCOUNTANT, ADMIN, OWNER, VIEWER, require_roles
 from app.models.user import User
 from app.reports.pdf import export_pdf
@@ -49,6 +50,22 @@ def _parse_uuid(value) -> UUID | None:
         return UUID(str(value))
     except Exception:
         return None
+
+
+def _parse_bool(value) -> bool | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered in {"1", "true", "yes", "y", "on"}:
+            return True
+        if lowered in {"0", "false", "no", "n", "off"}:
+            return False
+    return None
 
 
 async def _run_and_cache_report(
@@ -135,6 +152,8 @@ async def run_report(
     reference_id_param = _parse_uuid(params.get("reference_id"))
     direction_param = params.get("direction")
     reference_type_param = params.get("reference_type")
+    include_zero_param = _parse_bool(params.get("include_zero"))
+    include_zero = include_zero_param if include_zero_param is not None else False
 
     async def income_statement():
         return await report_service.get_income_statement(session, tenant_id, from_date_param, to_date_param)
@@ -146,6 +165,18 @@ async def run_report(
         return await report_service.get_cashflow_statement(session, tenant_id, from_date_param, to_date_param)
 
     async def trial_balance():
+        if from_date_param or to_date_param:
+            if not from_date_param or not to_date_param:
+                return {"error": "from_date and to_date are required"}
+            return await report_service.get_trial_balance_range(
+                session,
+                tenant_id,
+                from_date=from_date_param,
+                to_date=to_date_param,
+                include_zero=include_zero,
+            )
+        if as_of_param is None:
+            return {"error": "as_of_date is required"}
         return await report_service.get_trial_balance(session, tenant_id, as_of_param)
 
     async def client_statement():
@@ -366,15 +397,70 @@ async def cashflow_statement(
 
 @router.get("/trial-balance", response_model=ReportResponse)
 async def trial_balance(
-    as_of_date: date,
+    from_date: date | None = None,
+    to_date: date | None = None,
+    include_zero: bool = False,
+    as_of_date: date | None = None,
     session: AsyncSession = Depends(deps.get_db),
     tenant_id: UUID = Depends(deps.get_current_tenant),
     _: User = Depends(deps.get_current_active_user),
 ):
+    if from_date or to_date:
+        if not from_date or not to_date:
+            raise AppException(
+                code="report_date_range_required",
+                message="from_date and to_date are required",
+                http_status=422,
+            )
+        params = {"from_date": from_date, "to_date": to_date, "include_zero": include_zero}
+
+        async def generator():
+            return await report_service.get_trial_balance_range(
+                session,
+                tenant_id,
+                from_date=from_date,
+                to_date=to_date,
+                include_zero=include_zero,
+            )
+
+        return await _run_and_cache_report(session, tenant_id, "trial_balance", params, generator)
+
+    if as_of_date is None:
+        raise AppException(
+            code="report_date_required",
+            message="as_of_date is required",
+            http_status=422,
+        )
+
     params = {"as_of_date": as_of_date}
+
     async def generator():
         return await report_service.get_trial_balance(session, tenant_id, as_of_date)
+
     return await _run_and_cache_report(session, tenant_id, "trial_balance", params, generator)
+
+
+@router.get("/general-ledger/{account_id}", response_model=ReportResponse)
+async def general_ledger(
+    account_id: UUID,
+    from_date: date,
+    to_date: date,
+    session: AsyncSession = Depends(deps.get_db),
+    tenant_id: UUID = Depends(deps.get_current_tenant),
+    _: User = Depends(deps.get_current_active_user),
+):
+    params = {"account_id": account_id, "from_date": from_date, "to_date": to_date}
+
+    async def generator():
+        return await report_service.get_general_ledger(
+            session,
+            tenant_id,
+            account_id=account_id,
+            from_date=from_date,
+            to_date=to_date,
+        )
+
+    return await _run_and_cache_report(session, tenant_id, "general_ledger", params, generator)
 
 
 __all__ = ["router"]
