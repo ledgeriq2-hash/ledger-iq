@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DB_HOST="${DB_HOST:-db}"
+DB_HOST="${DB_HOST:-postgres}"
 DB_PORT="${DB_PORT:-5432}"
 DB_USER="${POSTGRES_USER:-ledgeriq}"
 DB_NAME="${POSTGRES_DB:-ledgeriq}"

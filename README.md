@@ -7,7 +7,8 @@ Runs locally with:
 Auth/JWT/MFA/RBAC/rate-limits are disabled for local runtime. All API calls require `X-Tenant-Id` and accept optional `X-Actor-Id`.
 
 ## Environment setup
-- Backend: copy `backend/.env.example` to `.env.development` (repo root or `backend/`) and fill in any required values for your environment (or copy to `backend/.env` and set `ENV_FILE=backend/.env`). For docker-compose Postgres, set `DATABASE_URL=postgresql+asyncpg://ledgeriq:ledgeriq_password@localhost:5432/ledgeriq`.
+- Docker: `.env.example` contains safe defaults for `docker compose`. Copy to `.env` if you want to override values.
+- Backend (local): copy `backend/.env.example` to `.env.development` (repo root or `backend/`) and fill in any required values for your environment (or copy to `backend/.env` and set `ENV_FILE=backend/.env`). For local Postgres, set `DATABASE_URL=postgresql+asyncpg://ledgeriq:ledgeriq_password@localhost:5432/ledgeriq`.
 - Local optional routes: set `FEATURE_OPTIONAL_ROUTES=true` to expose dashboard, reports, payments, AI/ML, admin, settings routes.
 - Frontend: copy `frontend/.env.example` to `frontend/.env` (or keep using PowerShell env vars as shown below).
   - If the frontend is proxied via nginx at `http://localhost`, `VITE_API_ORIGIN` can be left unset (defaults to current origin). To override, set `VITE_API_ORIGIN=http://localhost`.
@@ -15,9 +16,24 @@ Auth/JWT/MFA/RBAC/rate-limits are disabled for local runtime. All API calls requ
 Note: for local API usage via curl/Postman, keep `CSRF_ENABLED=false` in your dev env file.
 If you keep CSRF enabled in local dev, POSTs to `/api/v1/ai/*` are CSRF-exempt (dev-only) so you can call the AI forecast/anomaly endpoints without CSRF tokens.
 
-## Start dependencies (Postgres + Redis)
+## Docker (recommended)
 ```powershell
-docker compose up -d
+docker compose up --build
+```
+
+Backend health: `http://localhost:8000/health`  
+Frontend dev server: `http://localhost:5173`
+
+If port 5432 is already in use, set `POSTGRES_PORT` (for example in `.env`) before running Docker. Verifiers run via `docker compose exec` do not rely on the host port.
+
+## Migrations (Docker)
+```powershell
+docker compose exec backend alembic upgrade head
+```
+
+## Seed defaults (Docker)
+```powershell
+docker compose exec backend python -m app.initial_data
 ```
 
 ## Seed demo tenant (Docker Compose)
@@ -86,6 +102,26 @@ npm run dev
 ```
 
 Frontend: `http://localhost:5173`
+
+## Run verifiers
+If you are using Docker, run verifiers inside the backend container to avoid host port conflicts.
+
+```powershell
+docker compose exec backend python scripts/verify_sprint3.py
+docker compose exec backend python scripts/verify_sprint4.py
+docker compose exec backend python scripts/verify_sprint5.py
+docker compose exec backend python scripts/verify_sprint6.py
+```
+
+Local (from the backend directory):
+
+```powershell
+cd backend
+python scripts/verify_sprint3.py
+python scripts/verify_sprint4.py
+python scripts/verify_sprint5.py
+python scripts/verify_sprint6.py
+```
 
 ## Sprint 2 verification (COA + Ledger)
 ```powershell

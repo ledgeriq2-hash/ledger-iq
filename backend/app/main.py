@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import asyncio
 import os
 from pathlib import Path
 
@@ -69,6 +70,7 @@ DEV_ML_CSRF_BYPASS_PREFIXES = (
     "/api/v1/ml/predictions/ingest",
     "/api/v1/ml/snapshots",
 )
+DB_HEALTH_TIMEOUT_SECONDS = 2.0
 
 
 class CSRFMiddleware(BaseHTTPMiddleware):
@@ -237,6 +239,22 @@ api_router = _load_api_router()
 app.include_router(api_router)
 
 
+async def _db_check(log_label: str) -> bool:
+    try:
+        async with async_session_maker() as session:
+            await asyncio.wait_for(
+                session.execute(text("SELECT 1")),
+                timeout=DB_HEALTH_TIMEOUT_SECONDS,
+            )
+    except asyncio.TimeoutError:  # pragma: no cover - defensive guard
+        logger.warning(log_label, extra={"reason": "timeout"})
+        return False
+    except Exception as exc:  # pragma: no cover - defensive guard
+        logger.warning(log_label, extra={"reason": str(exc)})
+        return False
+    return True
+
+
 @app.get("/health", tags=["health"])
 async def health() -> dict[str, str]:
     return {"status": "ok"}
@@ -249,11 +267,14 @@ async def health_live() -> dict[str, str]:
 
 @app.get("/health/ready", tags=["health"])
 async def health_ready():
-    try:
-        async with async_session_maker() as session:
-            await session.execute(text("SELECT 1"))
-    except Exception as exc:  # pragma: no cover - defensive guard
-        logger.warning("readiness.failed", extra={"reason": str(exc)})
+    if not await _db_check("readiness.failed"):
+        return JSONResponse(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, content={"status": "error"})
+    return {"status": "ok"}
+
+
+@app.get("/health/db", tags=["health"])
+async def health_db():
+    if not await _db_check("health.db.failed"):
         return JSONResponse(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, content={"status": "error"})
     return {"status": "ok"}
 
