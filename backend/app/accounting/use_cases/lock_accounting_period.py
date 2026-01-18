@@ -8,8 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.accounting.repositories.period_lock_repo import PeriodLockRepository
 from app.core.exceptions import AppException
+from app.core.permissions import PermissionCode
 from app.models.accounting_period_lock import AccountingPeriodLock
 from app.services.audit_service import AuditService
+from app.services.permission_service import require_permission
 
 
 async def lock_accounting_period(
@@ -21,6 +23,12 @@ async def lock_accounting_period(
     actor_id: UUID | None,
     commit: bool = True,
 ) -> AccountingPeriodLock:
+    await require_permission(
+        session,
+        tenant_id=tenant_id,
+        actor_id=actor_id,
+        permission_code=PermissionCode.PERIOD_LOCK.value,
+    )
     if end_date < start_date:
         raise AppException(code="invalid_period", message="end_date must be on or after start_date", http_status=422)
 
@@ -53,6 +61,12 @@ async def unlock_accounting_period(
     actor_id: UUID | None,
     commit: bool = True,
 ) -> AccountingPeriodLock:
+    await require_permission(
+        session,
+        tenant_id=tenant_id,
+        actor_id=actor_id,
+        permission_code=PermissionCode.PERIOD_UNLOCK.value,
+    )
     result = await session.execute(
         select(AccountingPeriodLock).where(
             AccountingPeriodLock.id == lock_id,

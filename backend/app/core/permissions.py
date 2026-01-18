@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from enum import Enum
 from typing import Any
 
 from fastapi import Depends, status
@@ -11,6 +12,30 @@ OWNER = "owner"
 ADMIN = "admin"
 ACCOUNTANT = "accountant"
 VIEWER = "viewer"
+
+
+class PermissionCode(str, Enum):
+    COA_VIEW = "coa.view"
+    COA_MANAGE = "coa.manage"
+    JOURNAL_VIEW = "journal.view"
+    JOURNAL_CREATE = "journal.create"
+    JOURNAL_UPDATE = "journal.update"
+    JOURNAL_DELETE = "journal.delete"
+    JOURNAL_MANUAL_CREATE = "journal.manual.create"
+    JOURNAL_POST = "journal.post"
+    JOURNAL_REVERSE = "journal.reverse"
+    PERIOD_LOCK = "period.lock"
+    PERIOD_UNLOCK = "period.unlock"
+
+
+PERMISSION_CATALOG = tuple(code.value for code in PermissionCode)
+
+ROLE_PERMISSION_PRESETS = {
+    OWNER: {"all": True},
+    ADMIN: {"all": True, "codes": list(PERMISSION_CATALOG)},
+    ACCOUNTANT: {"accounting": True},
+    VIEWER: {"read_only": True},
+}
 
 
 def _normalize_roles(raw_roles: Any) -> set[str]:
@@ -103,6 +128,21 @@ def _has_permission(user: Any, permission_code: str) -> bool:
     return False
 
 
+def has_permission(user: Any, permission_code: str) -> bool:
+    return _has_permission(user, permission_code)
+
+
+def ensure_permission(user: Any, permission_code: str, *, message: str = "Insufficient permissions") -> None:
+    if getattr(user, "is_superuser", False):
+        return
+    if not _has_permission(user, permission_code):
+        raise AppException(
+            code="permission_denied",
+            message=message,
+            http_status=status.HTTP_403_FORBIDDEN,
+        )
+
+
 def require_roles(roles: list[str]):
     """
     Dependency placeholder for role-based access control.
@@ -148,4 +188,16 @@ def require_perm(permission_code: str):
     return dependency
 
 
-__all__ = ["OWNER", "ADMIN", "ACCOUNTANT", "VIEWER", "require_roles", "require_perm"]
+__all__ = [
+    "OWNER",
+    "ADMIN",
+    "ACCOUNTANT",
+    "VIEWER",
+    "PermissionCode",
+    "PERMISSION_CATALOG",
+    "ROLE_PERMISSION_PRESETS",
+    "has_permission",
+    "ensure_permission",
+    "require_roles",
+    "require_perm",
+]

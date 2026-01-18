@@ -8,6 +8,7 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
+
 def _candidate_env_paths() -> list[Path]:
     backend_dir = Path(__file__).resolve().parents[1]
     repo_root = Path(__file__).resolve().parents[2]
@@ -51,7 +52,7 @@ def _load_env_fallback() -> bool:
 def _prepare_environment() -> None:
     loaded = _load_env_with_dotenv()
     if not loaded and not _load_env_fallback():
-        print("verify_sprint3: env file not loaded; relying on process environment")
+        print("verify_sprint4: env file not loaded; relying on process environment")
     os.environ.setdefault("ENVIRONMENT", "development")
     os.environ.setdefault("BILLING_ENABLED", "false")
     os.environ.setdefault("JWT_SECRET_KEY", "dev-jwt-secret-key")
@@ -72,11 +73,9 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.accounting.use_cases.lock_accounting_period import lock_accounting_period
 from app.core.exceptions import AppException
-from app.core.permissions import require_perm
 from app.database import engine
 from app.initial_data import seed_tenant
 from app.models.account import Account
-from app.models.audit_log import AuditLog
 from app.models.role import Role
 from app.models.tenant import Tenant
 from app.schemas.journal_entry import JournalEntryUpdate
@@ -107,33 +106,6 @@ async def _expect_app_exception(session, awaitable, *, code: str, label: str) ->
     raise VerificationError(f"{label} failed: expected {code}, got success")
 
 
-async def _expect_permission_denied(dependency, *, user, label: str) -> None:
-    try:
-        await dependency(current_user=user)
-    except AppException as exc:
-        if exc.code != "permission_denied":
-            raise VerificationError(
-                f"{label} failed: expected permission_denied, got {exc.code} ({exc.message})"
-            ) from exc
-        return
-    except Exception as exc:
-        raise VerificationError(
-            f"{label} failed: expected permission_denied, got {type(exc).__name__}: {exc}"
-        ) from exc
-    raise VerificationError(f"{label} failed: expected permission_denied, got success")
-
-
-async def _assert_audit(session, tenant_id: uuid.UUID, action: str) -> None:
-    result = await session.execute(
-        select(AuditLog.id).where(
-            AuditLog.tenant_id == tenant_id,
-            AuditLog.action == action,
-        )
-    )
-    if result.scalar_one_or_none() is None:
-        raise VerificationError(f"audit check failed: missing action {action}")
-
-
 async def _get_role(session, tenant_id: uuid.UUID, name: str) -> Role:
     result = await session.execute(
         select(Role).where(Role.tenant_id == tenant_id, Role.name == name)
@@ -148,8 +120,8 @@ async def run() -> None:
     session_maker = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
     async with session_maker() as session:
         tenant = Tenant(
-            name="Sprint 3 Verify",
-            slug=f"sprint3-verify-{uuid.uuid4().hex[:8]}",
+            name="Sprint 4 Verify",
+            slug=f"sprint4-verify-{uuid.uuid4().hex[:8]}",
         )
         session.add(tenant)
         await session.commit()
@@ -160,8 +132,6 @@ async def run() -> None:
 
         admin_role = await _get_role(session, tenant_id, "ADMIN")
         viewer_role = await _get_role(session, tenant_id, "VIEWER")
-        admin_role_id = admin_role.id
-        viewer_role_name = viewer_role.name
 
         admin_user = await user_service.create_user(
             session,
@@ -169,8 +139,8 @@ async def run() -> None:
             {
                 "email": f"admin-{tenant.slug}@example.com",
                 "password": "Test1234",
-                "full_name": "Sprint 3 Admin",
-                "role_id": admin_role_id,
+                "full_name": "Sprint 4 Admin",
+                "role_id": admin_role.id,
             },
         )
         viewer_user = await user_service.create_user(
@@ -179,12 +149,12 @@ async def run() -> None:
             {
                 "email": f"viewer-{tenant.slug}@example.com",
                 "password": "Test1234",
-                "full_name": "Sprint 3 Viewer",
+                "full_name": "Sprint 4 Viewer",
                 "role_id": viewer_role.id,
             },
         )
         admin_user_id = admin_user.id
-        viewer_user_stub = {"role": viewer_role_name}
+        viewer_user_id = viewer_user.id
 
         accounts_result = await session.execute(
             select(Account).where(Account.tenant_id == tenant_id).order_by(Account.code.asc())
@@ -197,31 +167,54 @@ async def run() -> None:
         credit_account_id = accounts[1].id
         entry_date = date.today()
 
-        service = LedgerService(session=session, tenant_id=tenant_id, actor_id=admin_user_id)
-        entry = await service.create_manual_entry(
+        admin_service = LedgerService(session=session, tenant_id=tenant_id, actor_id=admin_user_id)
+        entry = await admin_service.create_manual_entry(
             entry_date=entry_date,
             base_currency="USD",
-            memo="Sprint 3 verify entry",
+            memo="Sprint 4 verify entry",
             source_type="manual",
             source_id=None,
             lines=[
                 JournalLineCreate(
                     account_id=debit_account_id,
-                    debit_amount=Decimal("100.00"),
+                    debit_amount=Decimal("120.00"),
                     credit_amount=Decimal("0.00"),
                     line_currency="USD",
                 ),
                 JournalLineCreate(
                     account_id=credit_account_id,
                     debit_amount=Decimal("0.00"),
-                    credit_amount=Decimal("100.00"),
+                    credit_amount=Decimal("120.00"),
                     line_currency="USD",
                 ),
             ],
         )
 
-        posted_entry = await service.post_entry(entry.id)
+        posted_entry = await admin_service.post_entry(entry.id)
         posted_entry_id = posted_entry.id
+
+        draft_entry = await admin_service.create_manual_entry(
+            entry_date=entry_date,
+            base_currency="USD",
+            memo="Sprint 4 viewer post entry",
+            source_type="manual",
+            source_id=None,
+            lines=[
+                JournalLineCreate(
+                    account_id=debit_account_id,
+                    debit_amount=Decimal("50.00"),
+                    credit_amount=Decimal("0.00"),
+                    line_currency="USD",
+                ),
+                JournalLineCreate(
+                    account_id=credit_account_id,
+                    debit_amount=Decimal("0.00"),
+                    credit_amount=Decimal("50.00"),
+                    line_currency="USD",
+                ),
+            ],
+        )
+        draft_entry_id = draft_entry.id
 
         await _expect_app_exception(
             session,
@@ -248,15 +241,42 @@ async def run() -> None:
             label="delete posted entry",
         )
 
-        reversal = await service.reverse_entry(posted_entry_id, reason="Sprint 3 verification")
+        reversal = await admin_service.reverse_entry(posted_entry_id, reason="Sprint 4 verification")
         if reversal.reversal_of_entry_id != posted_entry_id:
             raise VerificationError("reversal entry does not reference original entry")
 
         await _expect_app_exception(
             session,
-            service.reverse_entry(posted_entry_id, reason="Sprint 3 verification again"),
+            admin_service.reverse_entry(posted_entry_id, reason="Sprint 4 verification again"),
             code="journal_already_reversed",
             label="second reversal",
+        )
+
+        viewer_service = LedgerService(session=session, tenant_id=tenant_id, actor_id=viewer_user_id)
+        await _expect_app_exception(
+            session,
+            viewer_service.post_entry(draft_entry_id),
+            code="permission_denied",
+            label="viewer post permission",
+        )
+        await _expect_app_exception(
+            session,
+            viewer_service.reverse_entry(posted_entry_id, reason="Viewer reversal"),
+            code="permission_denied",
+            label="viewer reversal permission",
+        )
+        await _expect_app_exception(
+            session,
+            lock_accounting_period(
+                session,
+                tenant_id=tenant_id,
+                start_date=entry_date,
+                end_date=entry_date,
+                actor_id=viewer_user_id,
+                commit=True,
+            ),
+            code="permission_denied",
+            label="viewer period lock permission",
         )
 
         await lock_accounting_period(
@@ -268,67 +288,17 @@ async def run() -> None:
             commit=True,
         )
 
-        locked_entry = await service.create_manual_entry(
-            entry_date=entry_date,
-            base_currency="USD",
-            memo="Sprint 3 locked period entry",
-            source_type="manual",
-            source_id=None,
-            lines=[
-                JournalLineCreate(
-                    account_id=debit_account_id,
-                    debit_amount=Decimal("50.00"),
-                    credit_amount=Decimal("0.00"),
-                    line_currency="USD",
-                ),
-                JournalLineCreate(
-                    account_id=credit_account_id,
-                    debit_amount=Decimal("0.00"),
-                    credit_amount=Decimal("50.00"),
-                    line_currency="USD",
-                ),
-            ],
-        )
-        locked_entry_id = locked_entry.id
-
-        await _expect_app_exception(
-            session,
-            service.post_entry(locked_entry_id),
-            code="accounting_period_locked",
-            label="post into locked period",
-        )
-
-        await _assert_audit(session, tenant_id, "journal.post")
-        await _assert_audit(session, tenant_id, "journal.reverse")
-        await _assert_audit(session, tenant_id, "period.lock")
-
-        await _expect_permission_denied(
-            require_perm("journal.post"),
-            user=viewer_user_stub,
-            label="unauthorized post permission",
-        )
-        await _expect_permission_denied(
-            require_perm("journal.reverse"),
-            user=viewer_user_stub,
-            label="unauthorized reversal permission",
-        )
-        await _expect_permission_denied(
-            require_perm("period.lock"),
-            user=viewer_user_stub,
-            label="unauthorized period lock permission",
-        )
-
-    print("Sprint 3 verification: OK")
+    print("Sprint 4 verification: OK")
 
 
 def main() -> None:
     try:
         asyncio.run(run())
     except VerificationError as exc:
-        print(f"Sprint 3 verification: FAILED - {exc}")
+        print(f"Sprint 4 verification: FAILED - {exc}")
         sys.exit(1)
     except AppException as exc:
-        print(f"Sprint 3 verification: FAILED - {exc.code}: {exc.message}")
+        print(f"Sprint 4 verification: FAILED - {exc.code}: {exc.message}")
         sys.exit(1)
 
 

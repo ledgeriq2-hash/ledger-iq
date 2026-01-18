@@ -186,6 +186,7 @@ async def test_account_mapping_missing_returns_422(client: AsyncClient, auth_con
 async def test_period_lock_blocks_treasury_movement(client: AsyncClient, auth_context, coa_mapping, treasury_id):
     token = auth_context["token"]
     tenant_id = auth_context["tenant_id"]
+    actor_id = auth_context["user_id"]
     today = date.today()
     async with async_session_maker() as session:
         await lock_accounting_period(
@@ -193,7 +194,7 @@ async def test_period_lock_blocks_treasury_movement(client: AsyncClient, auth_co
             tenant_id=tenant_id,
             start_date=today,
             end_date=today,
-            actor_id=None,
+            actor_id=actor_id,
         )
 
     customer = await _create_customer(client, token, name="Locked")

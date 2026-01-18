@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import logging
 from collections.abc import Iterable
 from uuid import UUID
@@ -9,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
+from app.core.permissions import PERMISSION_CATALOG, ROLE_PERMISSION_PRESETS
 from app.database import async_session_maker
 from app.models.account import Account
 from app.models.account_mapping import AccountMapping
@@ -23,22 +25,11 @@ from app.services.settings_service import APP_SETTINGS_KEY, DEFAULT_PRIMARY, DEF
 logger = logging.getLogger(__name__)
 
 DEFAULT_ROLES = [
-    {"name": "OWNER", "permissions_json": {"all": True}},
-    {"name": "ADMIN", "permissions_json": {"all": True}},
-    {"name": "ACCOUNTANT", "permissions_json": {"accounting": True}},
-    {"name": "VIEWER", "permissions_json": {"read_only": True}},
+    {"name": role_name.upper(), "permissions_json": copy.deepcopy(permissions)}
+    for role_name, permissions in ROLE_PERMISSION_PRESETS.items()
 ]
 
-DEFAULT_PERMISSION_CODES = [
-    "coa.view",
-    "coa.manage",
-    "journal.view",
-    "journal.manual.create",
-    "journal.post",
-    "journal.reverse",
-    "period.lock",
-    "period.unlock",
-]
+DEFAULT_PERMISSION_CODES = list(PERMISSION_CATALOG)
 
 DEFAULT_ACCOUNTS = [
     {"code": "1000", "name": "Cash", "type": AccountType.ASSET},

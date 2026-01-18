@@ -14,9 +14,11 @@ from app.accounting.dto import LedgerLineInput, RecordFinancialTransactionInput,
 from app.accounting.use_cases.record_financial_transaction import record_financial_transaction
 from app.accounting.repositories.period_lock_repo import PeriodLockRepository
 from app.core.exceptions import AppException
+from app.core.permissions import PermissionCode
 from app.models.journal_entry import JournalEntry
 from app.models.treasury_transaction import TreasuryTransaction
 from app.services import audit_log_service
+from app.services.permission_service import require_permission
 
 
 def _to_dict(payload: Any, *, exclude_unset: bool = False) -> dict[str, Any]:
@@ -29,6 +31,20 @@ def _to_dict(payload: Any, *, exclude_unset: bool = False) -> dict[str, Any]:
 
 def _entry_is_posted(entry: JournalEntry) -> bool:
     return bool(entry.is_posted) or str(entry.status or "").lower() == "posted"
+
+
+async def _require_permission(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    actor_id: uuid.UUID | None,
+    permission_code: str,
+) -> None:
+    await require_permission(
+        session,
+        tenant_id=tenant_id,
+        actor_id=actor_id,
+        permission_code=permission_code,
+    )
 
 
 async def _has_reversal_entry(session: AsyncSession, tenant_id: uuid.UUID, entry_id: uuid.UUID) -> bool:
@@ -74,6 +90,7 @@ async def create_journal_entry(
     *,
     actor_id: uuid.UUID | None = None,
 ) -> JournalEntry:
+    await _require_permission(session, tenant_id, actor_id, PermissionCode.JOURNAL_CREATE.value)
     data = _to_dict(payload)
     lines_data = data.pop("lines", None)
     if not lines_data:
@@ -120,8 +137,14 @@ async def create_journal_entry(
 
 
 async def update_journal_entry(
-    session: AsyncSession, tenant_id: uuid.UUID, entry_id: uuid.UUID, payload: Any
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    entry_id: uuid.UUID,
+    payload: Any,
+    *,
+    actor_id: uuid.UUID | None = None,
 ) -> JournalEntry | None:
+    await _require_permission(session, tenant_id, actor_id, PermissionCode.JOURNAL_UPDATE.value)
     _ = payload
     entry = await get_journal_entry(session, tenant_id, entry_id)
     if not entry:
@@ -198,7 +221,14 @@ async def create_reversing_entry_impl(
     )
 
 
-async def delete_journal_entry(session: AsyncSession, tenant_id: uuid.UUID, entry_id: uuid.UUID) -> bool:
+async def delete_journal_entry(
+    session: AsyncSession,
+    tenant_id: uuid.UUID,
+    entry_id: uuid.UUID,
+    *,
+    actor_id: uuid.UUID | None = None,
+) -> bool:
+    await _require_permission(session, tenant_id, actor_id, PermissionCode.JOURNAL_DELETE.value)
     entry = await get_journal_entry(session, tenant_id, entry_id)
     if not entry:
         raise AppException(
@@ -233,6 +263,7 @@ async def reverse_journal_entry(
     actor_id: uuid.UUID | None = None,
     reason: str | None = None,
 ) -> JournalEntry:
+    await _require_permission(session, tenant_id, actor_id, PermissionCode.JOURNAL_REVERSE.value)
     entry = await get_journal_entry(session, tenant_id, entry_id)
     if not entry:
         raise AppException(code="journal_entry_not_found", message="Journal entry not found", http_status=404)

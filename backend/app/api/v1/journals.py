@@ -94,7 +94,6 @@ async def create_manual_journal(
     session: AsyncSession = Depends(deps.get_db),
     tenant_id: UUID = Depends(deps.get_current_tenant),
     _: object = Depends(deps.get_current_active_user),
-    __: object = Depends(require_perm("journal.manual.create")),
 ):
     actor_id = getattr(request.state, "user_id", None)
     service = LedgerService(session=session, tenant_id=tenant_id, actor_id=actor_id)
@@ -115,7 +114,6 @@ async def post_journal_entry(
     session: AsyncSession = Depends(deps.get_db),
     tenant_id: UUID = Depends(deps.get_current_tenant),
     _: object = Depends(deps.get_current_active_user),
-    __: object = Depends(require_perm("journal.post")),
 ):
     actor_id = getattr(request.state, "user_id", None)
     service = LedgerService(session=session, tenant_id=tenant_id, actor_id=actor_id)
@@ -130,7 +128,6 @@ async def reverse_journal_entry(
     session: AsyncSession = Depends(deps.get_db),
     tenant_id: UUID = Depends(deps.get_current_tenant),
     _: object = Depends(deps.get_current_active_user),
-    __: object = Depends(require_perm("journal.reverse")),
 ):
     actor_id = getattr(request.state, "user_id", None)
     service = LedgerService(session=session, tenant_id=tenant_id, actor_id=actor_id)
@@ -144,7 +141,6 @@ async def lock_accounting_period_endpoint(
     session: AsyncSession = Depends(deps.get_db),
     tenant_id: UUID = Depends(deps.get_current_tenant),
     _: object = Depends(deps.get_current_active_user),
-    __: object = Depends(require_perm("period.lock")),
 ):
     actor_id = getattr(request.state, "user_id", None)
     return await lock_accounting_period(
@@ -164,7 +160,6 @@ async def unlock_accounting_period_endpoint(
     session: AsyncSession = Depends(deps.get_db),
     tenant_id: UUID = Depends(deps.get_current_tenant),
     _: object = Depends(deps.get_current_active_user),
-    __: object = Depends(require_perm("period.unlock")),
 ):
     actor_id = getattr(request.state, "user_id", None)
     return await unlock_accounting_period(

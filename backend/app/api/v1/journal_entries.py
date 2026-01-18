@@ -53,7 +53,6 @@ async def create_journal_entry(
     session: AsyncSession = Depends(deps.get_db),
     tenant_id: UUID = Depends(deps.get_current_tenant),
     current_user: User = Depends(deps.get_current_active_user),
-    __: User = Depends(require_roles([OWNER, ADMIN, ACCOUNTANT])),
 ):
     try:
         actor_id = getattr(current_user, "id", None)
@@ -68,18 +67,23 @@ async def update_journal_entry(
     payload: JournalEntryUpdate,
     session: AsyncSession = Depends(deps.get_db),
     tenant_id: UUID = Depends(deps.get_current_tenant),
-    _: User = Depends(deps.get_current_active_user),
-    __: User = Depends(require_roles([OWNER, ADMIN, ACCOUNTANT])),
+    current_user: User = Depends(deps.get_current_active_user),
 ):
     try:
-        entry = await journal_service.update_journal_entry(session, tenant_id, entry_id, payload)
+        actor_id = getattr(current_user, "id", None)
+        entry = await journal_service.update_journal_entry(
+            session,
+            tenant_id,
+            entry_id,
+            payload,
+            actor_id=actor_id,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     if not entry:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Journal entry not found")
     return entry
-
 
 
 @router.post("/{entry_id}/reverse", response_model=JournalEntryPublic)
@@ -89,7 +93,6 @@ async def reverse_journal_entry(
     session: AsyncSession = Depends(deps.get_db),
     tenant_id: UUID = Depends(deps.get_current_tenant),
     current_user: User = Depends(deps.get_current_active_user),
-    __: User = Depends(require_roles([OWNER, ADMIN, ACCOUNTANT])),
 ):
     actor_id = getattr(current_user, "id", None)
     return await journal_service.reverse_journal_entry(

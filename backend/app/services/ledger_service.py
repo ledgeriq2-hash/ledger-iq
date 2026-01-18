@@ -11,9 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import AppException
+from app.core.permissions import PermissionCode
 from app.models.journal_entry import JournalEntry
 from app.models.journal_line import JournalLine
 from app.services.audit_service import AuditService
+from app.services.permission_service import require_permission
 from app.services.period_guard import PeriodGuard
 
 STATUS_DRAFT = "Draft"
@@ -55,6 +57,14 @@ class LedgerService:
     def _normalize_currency(self, currency: str | None) -> str:
         candidate = (currency or "").strip().upper()
         return candidate or DEFAULT_BASE_CURRENCY
+
+    async def _require_permission(self, permission_code: str) -> None:
+        await require_permission(
+            self.session,
+            tenant_id=self.tenant_id,
+            actor_id=self.actor_id,
+            permission_code=permission_code,
+        )
 
     def _compute_base_amounts(
         self,
@@ -183,6 +193,7 @@ class LedgerService:
         source_id: uuid.UUID | None,
         lines: list,
     ) -> JournalEntry:
+        await self._require_permission(PermissionCode.JOURNAL_MANUAL_CREATE.value)
         normalized_currency = self._normalize_currency(base_currency)
         normalized_lines = self.validate_lines(lines, normalized_currency)
         debit_total, credit_total = self.compute_base_totals(normalized_lines)
@@ -235,6 +246,7 @@ class LedgerService:
         return await self._load_entry(entry.id, include_lines=True)
 
     async def post_entry(self, entry_id: uuid.UUID) -> JournalEntry:
+        await self._require_permission(PermissionCode.JOURNAL_POST.value)
         entry = await self._load_entry(entry_id, include_lines=True)
         if entry.status != STATUS_DRAFT:
             raise AppException(
@@ -293,6 +305,7 @@ class LedgerService:
         return await self._load_entry(entry.id, include_lines=True)
 
     async def reverse_entry(self, entry_id: uuid.UUID, *, reason: str) -> JournalEntry:
+        await self._require_permission(PermissionCode.JOURNAL_REVERSE.value)
         if not reason or not reason.strip():
             raise AppException(
                 code="journal_reverse_reason_required",
