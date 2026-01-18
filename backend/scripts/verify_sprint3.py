@@ -68,11 +68,12 @@ if str(BACKEND_ROOT) not in sys.path:
 _prepare_environment()
 
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.accounting.use_cases.lock_accounting_period import lock_accounting_period
 from app.core.exceptions import AppException
 from app.core.permissions import require_perm
-from app.database import async_session_maker
+from app.database import engine
 from app.initial_data import seed_tenant
 from app.models.account import Account
 from app.models.audit_log import AuditLog
@@ -144,7 +145,8 @@ async def _get_role(session, tenant_id: uuid.UUID, name: str) -> Role:
 
 
 async def run() -> None:
-    async with async_session_maker() as session:
+    session_maker = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+    async with session_maker() as session:
         tenant = Tenant(
             name="Sprint 3 Verify",
             slug=f"sprint3-verify-{uuid.uuid4().hex[:8]}",
@@ -152,25 +154,28 @@ async def run() -> None:
         session.add(tenant)
         await session.commit()
         await session.refresh(tenant)
+        tenant_id = tenant.id
 
         await seed_tenant(session, tenant)
 
-        admin_role = await _get_role(session, tenant.id, "ADMIN")
-        viewer_role = await _get_role(session, tenant.id, "VIEWER")
+        admin_role = await _get_role(session, tenant_id, "ADMIN")
+        viewer_role = await _get_role(session, tenant_id, "VIEWER")
+        admin_role_id = admin_role.id
+        viewer_role_name = viewer_role.name
 
         admin_user = await user_service.create_user(
             session,
-            tenant.id,
+            tenant_id,
             {
                 "email": f"admin-{tenant.slug}@example.com",
                 "password": "Test1234",
                 "full_name": "Sprint 3 Admin",
-                "role_id": admin_role.id,
+                "role_id": admin_role_id,
             },
         )
         viewer_user = await user_service.create_user(
             session,
-            tenant.id,
+            tenant_id,
             {
                 "email": f"viewer-{tenant.slug}@example.com",
                 "password": "Test1234",
@@ -178,21 +183,21 @@ async def run() -> None:
                 "role_id": viewer_role.id,
             },
         )
-        admin_user.role = admin_role
-        viewer_user.role = viewer_role
+        admin_user_id = admin_user.id
+        viewer_user_stub = {"role": viewer_role_name}
 
         accounts_result = await session.execute(
-            select(Account).where(Account.tenant_id == tenant.id).order_by(Account.code.asc())
+            select(Account).where(Account.tenant_id == tenant_id).order_by(Account.code.asc())
         )
         accounts = accounts_result.scalars().all()
         if len(accounts) < 2:
             raise VerificationError("expected at least two accounts for journal lines")
 
-        debit_account = accounts[0]
-        credit_account = accounts[1]
+        debit_account_id = accounts[0].id
+        credit_account_id = accounts[1].id
         entry_date = date.today()
 
-        service = LedgerService(session=session, tenant_id=tenant.id, actor_id=admin_user.id)
+        service = LedgerService(session=session, tenant_id=tenant_id, actor_id=admin_user_id)
         entry = await service.create_manual_entry(
             entry_date=entry_date,
             base_currency="USD",
@@ -201,13 +206,13 @@ async def run() -> None:
             source_id=None,
             lines=[
                 JournalLineCreate(
-                    account_id=debit_account.id,
+                    account_id=debit_account_id,
                     debit_amount=Decimal("100.00"),
                     credit_amount=Decimal("0.00"),
                     line_currency="USD",
                 ),
                 JournalLineCreate(
-                    account_id=credit_account.id,
+                    account_id=credit_account_id,
                     debit_amount=Decimal("0.00"),
                     credit_amount=Decimal("100.00"),
                     line_currency="USD",
@@ -216,13 +221,14 @@ async def run() -> None:
         )
 
         posted_entry = await service.post_entry(entry.id)
+        posted_entry_id = posted_entry.id
 
         await _expect_app_exception(
             session,
             journal_service.update_journal_entry(
                 session,
-                tenant.id,
-                posted_entry.id,
+                tenant_id,
+                posted_entry_id,
                 JournalEntryUpdate(description="blocked"),
             ),
             code="journal_posted_immutable",
@@ -231,28 +237,28 @@ async def run() -> None:
 
         await _expect_app_exception(
             session,
-            journal_service.delete_journal_entry(session, tenant.id, posted_entry.id),
+            journal_service.delete_journal_entry(session, tenant_id, posted_entry_id),
             code="journal_posted_immutable",
             label="delete posted entry",
         )
 
-        reversal = await service.reverse_entry(posted_entry.id, reason="Sprint 3 verification")
-        if reversal.reversal_of_entry_id != posted_entry.id:
+        reversal = await service.reverse_entry(posted_entry_id, reason="Sprint 3 verification")
+        if reversal.reversal_of_entry_id != posted_entry_id:
             raise VerificationError("reversal entry does not reference original entry")
 
         await _expect_app_exception(
             session,
-            service.reverse_entry(posted_entry.id, reason="Sprint 3 verification again"),
+            service.reverse_entry(posted_entry_id, reason="Sprint 3 verification again"),
             code="journal_already_reversed",
             label="second reversal",
         )
 
         await lock_accounting_period(
             session,
-            tenant_id=tenant.id,
+            tenant_id=tenant_id,
             start_date=entry_date,
             end_date=entry_date,
-            actor_id=admin_user.id,
+            actor_id=admin_user_id,
             commit=True,
         )
 
@@ -264,44 +270,45 @@ async def run() -> None:
             source_id=None,
             lines=[
                 JournalLineCreate(
-                    account_id=debit_account.id,
+                    account_id=debit_account_id,
                     debit_amount=Decimal("50.00"),
                     credit_amount=Decimal("0.00"),
                     line_currency="USD",
                 ),
                 JournalLineCreate(
-                    account_id=credit_account.id,
+                    account_id=credit_account_id,
                     debit_amount=Decimal("0.00"),
                     credit_amount=Decimal("50.00"),
                     line_currency="USD",
                 ),
             ],
         )
+        locked_entry_id = locked_entry.id
 
         await _expect_app_exception(
             session,
-            service.post_entry(locked_entry.id),
+            service.post_entry(locked_entry_id),
             code="accounting_period_locked",
             label="post into locked period",
         )
 
-        await _assert_audit(session, tenant.id, "journal.post")
-        await _assert_audit(session, tenant.id, "journal.reverse")
-        await _assert_audit(session, tenant.id, "period.lock")
+        await _assert_audit(session, tenant_id, "journal.post")
+        await _assert_audit(session, tenant_id, "journal.reverse")
+        await _assert_audit(session, tenant_id, "period.lock")
 
         await _expect_permission_denied(
             require_perm("journal.post"),
-            user=viewer_user,
+            user=viewer_user_stub,
             label="unauthorized post permission",
         )
         await _expect_permission_denied(
             require_perm("journal.reverse"),
-            user=viewer_user,
+            user=viewer_user_stub,
             label="unauthorized reversal permission",
         )
         await _expect_permission_denied(
             require_perm("period.lock"),
-            user=viewer_user,
+            user=viewer_user_stub,
             label="unauthorized period lock permission",
         )
 
