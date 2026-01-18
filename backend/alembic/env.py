@@ -7,12 +7,40 @@ import importlib
 import pkgutil
 from pathlib import Path
 
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+except Exception:  # pragma: no cover - optional dependency
+    load_dotenv = None
 
 from alembic import context
 from sqlalchemy import engine_from_config, text
 from sqlalchemy import pool
 from sqlalchemy.engine.url import make_url
+
+LOADED_ENV_FILES: list[Path] = []
+_DEBUG_ENV_PRINTED = False
+
+
+def _parse_env_file(path: Path) -> bool:
+    loaded = False
+    for line in path.read_text(encoding="utf-8").splitlines():
+        raw = line.strip()
+        if not raw or raw.startswith("#") or "=" not in raw:
+            continue
+        key, _, value = raw.partition("=")
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        if key:
+            os.environ.setdefault(key, value)
+            loaded = True
+    return loaded
+
+
+def _load_env_file(path: Path) -> bool:
+    if load_dotenv is not None:
+        return bool(load_dotenv(path, override=False))
+    return _parse_env_file(path)
+
 
 # IMPORTANT: load env BEFORE importing app.* (settings are evaluated at import time)
 def _load_local_env_files() -> None:
@@ -28,21 +56,16 @@ def _load_local_env_files() -> None:
     repo_root = Path(__file__).resolve().parents[2]
     backend_dir = Path(__file__).resolve().parents[1]
 
-    for candidate in (backend_dir / ".env", repo_root / ".env"):
-        if candidate.exists():
-            load_dotenv(candidate, override=False)
+    def load_candidates(paths: list[Path]) -> None:
+        for path in paths:
+            if path.exists() and _load_env_file(path):
+                LOADED_ENV_FILES.append(path)
 
-    env = (os.getenv("ENVIRONMENT") or "").strip().lower()
-    if not env:
-        for candidate in (backend_dir / ".env.development", repo_root / ".env.development"):
-            if candidate.exists():
-                load_dotenv(candidate, override=False)
-        env = (os.getenv("ENVIRONMENT") or "").strip().lower()
+    load_candidates([backend_dir / ".env.local", repo_root / ".env.local"])
 
+    env = (os.getenv("ENVIRONMENT") or "development").strip().lower()
     if env and env not in {"production", "prod"}:
-        for candidate in (backend_dir / f".env.{env}", repo_root / f".env.{env}"):
-            if candidate.exists():
-                load_dotenv(candidate, override=False)
+        load_candidates([backend_dir / f".env.{env}", repo_root / f".env.{env}"])
 
 
 _load_local_env_files()
@@ -79,7 +102,9 @@ def _get_alembic_database_url() -> str:
     """
     explicit = os.getenv("ALEMBIC_DATABASE_URL") or os.getenv("DATABASE_URL_SYNC")
     if explicit:
-        return explicit
+        url = make_url(explicit)
+        _maybe_debug_env(url)
+        return url.render_as_string(hide_password=False)
 
     base_url = settings.database_url
     if not base_url:
@@ -90,7 +115,23 @@ def _get_alembic_database_url() -> str:
         url = url.set(drivername="postgresql+psycopg")
     elif url.drivername == "postgresql+psycopg2":
         url = url.set(drivername="postgresql+psycopg")
+    _maybe_debug_env(url)
     return url.render_as_string(hide_password=False)
+
+
+def _maybe_debug_env(url) -> None:
+    if os.getenv("ALEMBIC_DEBUG_ENV") != "1":
+        return
+    global _DEBUG_ENV_PRINTED
+    if _DEBUG_ENV_PRINTED:
+        return
+    _DEBUG_ENV_PRINTED = True
+    loaded = ", ".join(str(path) for path in LOADED_ENV_FILES) if LOADED_ENV_FILES else "<none>"
+    host = url.host or ""
+    if not host and url.database:
+        host = url.database
+    print(f"Alembic env files loaded: {loaded}")
+    print(f"Alembic DB host: {host or 'unknown'}")
 
 
 _import_all_models()
