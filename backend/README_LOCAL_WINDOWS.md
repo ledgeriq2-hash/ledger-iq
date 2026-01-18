@@ -32,6 +32,18 @@ Set-Location "C:\Users\Elmodather\Ledger IQ\backend"
 python "scripts\verify_sprint3.py"
 ```
 
+## 5) Run Sprint 4 verification
+```powershell
+Set-Location "C:\Users\Elmodather\Ledger IQ\backend"
+python "scripts\verify_sprint4.py"
+```
+
+## 6) Run Sprint 5 verification
+```powershell
+Set-Location "C:\Users\Elmodather\Ledger IQ\backend"
+python "scripts\verify_sprint5.py"
+```
+
 ## Notes
 - If both `.env.local` files exist, the backend file takes precedence.
 - For debug, you can set `ALEMBIC_DEBUG_ENV=1` to print which env file loaded
