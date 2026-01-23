@@ -6,10 +6,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import deps
-from app.core.pagination import MAX_PAGE_SIZE, PaginatedResponse, PaginationParams, pagination_params
+from app.core.pagination import MAX_PAGE_SIZE, PaginationParams, pagination_params
 from app.core.permissions import ACCOUNTANT, ADMIN, OWNER, VIEWER, require_roles
 from app.models.user import User
-from app.schemas.customer import CustomerCreate, CustomerPublic, CustomerStatusFilter, CustomerUpdate
+from app.schemas.customer import CustomerCreate, CustomerListOut, CustomerOut, CustomerStatusFilter, CustomerUpdate
 from app.services import customer_service
 
 router = APIRouter(prefix="/customers")
@@ -27,7 +27,7 @@ def _resolve_pagination(
     return PaginationParams(page=page, page_size=page_size)
 
 
-@router.get("/", response_model=PaginatedResponse[CustomerPublic])
+@router.get("/", response_model=CustomerListOut)
 async def list_customers(
     search: str | None = Query(default=None),
     status_filter: CustomerStatusFilter | None = Query(default=None, alias="status"),
@@ -47,10 +47,10 @@ async def list_customers(
         search=search,
         status_filter=status_filter,
     )
-    return PaginatedResponse[CustomerPublic].from_results(items=customers, total=total, params=params)
+    return CustomerListOut.from_results(items=customers, total=total, params=params)
 
 
-@router.get("/{customer_id}", response_model=CustomerPublic)
+@router.get("/{customer_id}", response_model=CustomerOut)
 async def get_customer(
     customer_id: UUID,
     session: AsyncSession = Depends(deps.get_db),
@@ -64,7 +64,7 @@ async def get_customer(
     return customer
 
 
-@router.post("/", response_model=CustomerPublic, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=CustomerOut, status_code=status.HTTP_201_CREATED)
 async def create_customer(
     payload: CustomerCreate,
     request: Request,
@@ -77,7 +77,7 @@ async def create_customer(
     return await customer_service.create_customer(session, tenant_id, payload, actor_id=actor_id)
 
 
-@router.patch("/{customer_id}", response_model=CustomerPublic)
+@router.patch("/{customer_id}", response_model=CustomerOut)
 async def update_customer(
     customer_id: UUID,
     payload: CustomerUpdate,
@@ -94,7 +94,7 @@ async def update_customer(
     return customer
 
 
-@router.post("/{customer_id}/deactivate", response_model=CustomerPublic)
+@router.post("/{customer_id}/deactivate", response_model=CustomerOut)
 async def deactivate_customer(
     customer_id: UUID,
     request: Request,
@@ -110,7 +110,7 @@ async def deactivate_customer(
     return customer
 
 
-@router.post("/{customer_id}/reactivate", response_model=CustomerPublic)
+@router.post("/{customer_id}/reactivate", response_model=CustomerOut)
 async def reactivate_customer(
     customer_id: UUID,
     request: Request,

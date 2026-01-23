@@ -27,6 +27,7 @@ from app.api.v1.journal_lines import router as journal_lines_router
 from app.api.v1.notifications import router as notifications_router
 from app.api.v1.products import router as products_router
 from app.api.v1.roles import router as roles_router
+from app.api.v1.sales_invoices import router as sales_invoices_router
 from app.api.v1.suppliers import router as suppliers_router
 from app.api.v1.tenants import router as tenants_router
 from app.api.v1.treasury import router as treasury_router
@@ -43,6 +44,7 @@ _include(journal_lines_router, prefix="/v1", tags=["journal_lines"])
 _include(notifications_router, prefix="/v1", tags=["notifications"])
 _include(products_router, prefix="/v1", tags=["products"])
 _include(roles_router, prefix="/v1", tags=["roles"])
+_include(sales_invoices_router, prefix="/v1", tags=["sales_invoices"])
 _include(suppliers_router, prefix="/v1", tags=["suppliers"])
 _include(tenants_router, prefix="/v1", tags=["tenants"])
 _include(treasury_router, prefix="/v1", tags=["treasury"])
