@@ -6,6 +6,7 @@ from uuid import UUID
 
 from pydantic import Field, field_validator, model_validator
 
+from app.core.pagination import PaginatedResponse
 from app.models.customer import CustomerStatus
 from app.schemas.common import BaseSchema, IDTimestampMixin
 
@@ -18,6 +19,8 @@ class CustomerBase(BaseSchema):
     email: str | None = None
     phone: str | None = None
     tax_id: str | None = None
+    currency_code: str | None = None
+    payment_terms_days: int | None = None
     notes: str | None = None
     metadata_json: dict | None = Field(default=None, serialization_alias="metadata")
 
@@ -48,17 +51,21 @@ class CustomerBase(BaseSchema):
 
 
 class CustomerCreate(CustomerBase):
-    pass
+    status: CustomerStatus = CustomerStatus.ACTIVE
 
 
 class CustomerUpdate(BaseSchema):
     model_config = {"from_attributes": True, "populate_by_name": True}
 
+    code: str | None = None
     name: str | None = None
     email: str | None = None
     phone: str | None = None
     tax_id: str | None = None
+    currency_code: str | None = None
+    payment_terms_days: int | None = None
     notes: str | None = None
+    status: CustomerStatus | None = None
     metadata_json: dict | None = Field(default=None, serialization_alias="metadata")
 
     @model_validator(mode="before")
@@ -80,6 +87,16 @@ class CustomerUpdate(BaseSchema):
             raise ValueError("name must not be blank")
         return value
 
+    @field_validator("code")
+    @classmethod
+    def update_code_not_blank(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        value = v.strip()
+        if not value:
+            raise ValueError("code must not be blank")
+        return value
+
 
 class CustomerPublic(IDTimestampMixin, CustomerBase):
     model_config = {"from_attributes": True, "populate_by_name": True}
@@ -89,6 +106,10 @@ class CustomerPublic(IDTimestampMixin, CustomerBase):
     deleted_at: datetime | None = None
 
 
+class CustomerOut(CustomerPublic):
+    pass
+
+
 class CustomerStatusFilter(str, Enum):
     ACTIVE = "ACTIVE"
     INACTIVE = "INACTIVE"
@@ -96,11 +117,17 @@ class CustomerStatusFilter(str, Enum):
     ALL = "ALL"
 
 
+class CustomerListOut(PaginatedResponse[CustomerOut]):
+    pass
+
+
 __all__ = [
     "CustomerBase",
     "CustomerCreate",
     "CustomerUpdate",
     "CustomerPublic",
+    "CustomerOut",
     "CustomerStatus",
     "CustomerStatusFilter",
+    "CustomerListOut",
 ]
