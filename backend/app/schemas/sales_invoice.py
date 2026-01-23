@@ -14,12 +14,21 @@ from app.schemas.common import BaseSchema, IDTimestampMixin
 class SalesInvoiceLineBase(BaseSchema):
     line_no: int
     description: str | None = None
+    product_id: UUID | None = None
+    unit_id: UUID | None = None
     quantity: Decimal
     unit_price: Decimal
     amount: Decimal
     revenue_account_id: UUID
 
-    @field_validator("quantity", "unit_price", "amount")
+    @field_validator("quantity")
+    @classmethod
+    def quantity_positive(cls, value: Decimal) -> Decimal:
+        if Decimal(str(value)) <= 0:
+            raise ValueError("quantity must be greater than zero")
+        return value
+
+    @field_validator("unit_price", "amount")
     @classmethod
     def non_negative_amounts(cls, value: Decimal) -> Decimal:
         if Decimal(str(value)) < 0:
@@ -34,12 +43,23 @@ class SalesInvoiceLineCreate(SalesInvoiceLineBase):
 class SalesInvoiceLineUpdate(BaseSchema):
     line_no: int | None = None
     description: str | None = None
+    product_id: UUID | None = None
+    unit_id: UUID | None = None
     quantity: Decimal | None = None
     unit_price: Decimal | None = None
     amount: Decimal | None = None
     revenue_account_id: UUID | None = None
 
-    @field_validator("quantity", "unit_price", "amount")
+    @field_validator("quantity")
+    @classmethod
+    def quantity_positive(cls, value: Decimal | None) -> Decimal | None:
+        if value is None:
+            return value
+        if Decimal(str(value)) <= 0:
+            raise ValueError("quantity must be greater than zero")
+        return value
+
+    @field_validator("unit_price", "amount")
     @classmethod
     def non_negative_amounts(cls, value: Decimal | None) -> Decimal | None:
         if value is None:
