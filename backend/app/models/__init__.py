@@ -30,7 +30,7 @@ from app.models.journal_line_dimension import JournalLineDimension
 from app.models.notification import Notification
 from app.models.payment import Payment
 from app.models.portal_token import PortalToken
-from app.models.product import Product
+from app.models.product import Product, ProductStatus
 from app.models.purchase_invoice import PurchaseInvoice, PurchaseInvoiceStatus
 from app.models.purchase_invoice_line import PurchaseInvoiceLine
 from app.models.recurring_invoice import RecurringInvoice
@@ -39,6 +39,8 @@ from app.models.reports_cache import ReportsCache
 from app.models.role import Role
 from app.models.sales_invoice import SalesInvoice, SalesInvoiceStatus
 from app.models.sales_invoice_line import SalesInvoiceLine
+from app.models.stock_balance import StockBalance
+from app.models.stock_move import StockMove, StockMoveDirection
 from app.models.stock_movement import StockMovement
 from app.models.stripe_event import StripeEvent
 from app.models.supplier import Supplier
@@ -54,6 +56,8 @@ from app.models.treasury_cash_transaction import (
     TreasuryCashTransaction,
 )
 from app.models.treasury_transaction import TreasuryTransaction
+from app.models.unit import Unit
+from app.models.unit_conversion import UnitConversion
 from app.models.user import User
 from app.models.vendor import Vendor, VendorStatus
 
@@ -90,6 +94,7 @@ ALL_MODELS = [
     Payment,
     PortalToken,
     Product,
+    ProductStatus,
     PurchaseInvoice,
     PurchaseInvoiceLine,
     RecurringInvoice,
@@ -99,6 +104,8 @@ ALL_MODELS = [
     SalesInvoice,
     SalesInvoiceLine,
     StockMovement,
+    StockMove,
+    StockBalance,
     StripeEvent,
     Supplier,
     Tenant,
@@ -109,6 +116,8 @@ ALL_MODELS = [
     TreasuryCashAccount,
     TreasuryCashTransaction,
     TreasuryTransaction,
+    Unit,
+    UnitConversion,
     User,
     Vendor,
 ]
@@ -147,6 +156,7 @@ __all__ = [
     "Payment",
     "PortalToken",
     "Product",
+    "ProductStatus",
     "PurchaseInvoice",
     "PurchaseInvoiceLine",
     "PurchaseInvoiceStatus",
@@ -158,6 +168,9 @@ __all__ = [
     "SalesInvoiceLine",
     "SalesInvoiceStatus",
     "StockMovement",
+    "StockMove",
+    "StockMoveDirection",
+    "StockBalance",
     "StripeEvent",
     "Supplier",
     "Tenant",
@@ -170,6 +183,8 @@ __all__ = [
     "CashTransactionType",
     "TreasuryCashTransaction",
     "TreasuryTransaction",
+    "Unit",
+    "UnitConversion",
     "User",
     "Vendor",
     "VendorStatus",
