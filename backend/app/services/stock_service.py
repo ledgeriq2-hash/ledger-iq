@@ -8,6 +8,7 @@ from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import lazyload
 
 from app.core.exceptions import AppException
 from app.core.pagination import PaginationParams, paginate_query
@@ -66,6 +67,7 @@ async def _get_balance_for_update(
 ) -> StockBalance | None:
     stmt = (
         select(StockBalance)
+        .options(lazyload(StockBalance.product))
         .where(StockBalance.tenant_id == tenant_id, StockBalance.product_id == product_id)
         .with_for_update()
     )
