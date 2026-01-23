@@ -59,10 +59,10 @@ class StockMoveListOut(PaginatedResponse[StockMoveOut]):
     pass
 
 
-class StockBalanceOut(IDTimestampMixin, BaseSchema):
+class StockBalanceOut(BaseSchema):
     product_id: UUID
     on_hand_qty_base: Decimal
-    updated_at: datetime
+    updated_at: datetime | None = None
 
 
 class StockBalanceListOut(PaginatedResponse[StockBalanceOut]):
