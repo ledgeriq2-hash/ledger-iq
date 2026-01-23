@@ -126,6 +126,8 @@ async def record_move(
     session: AsyncSession,
     tenant_id: UUID,
     payload: Any,
+    *,
+    commit: bool = True,
 ) -> tuple[StockMove, StockBalance]:
     data = _to_dict(payload)
     product_id = data.get("product_id")
@@ -213,7 +215,7 @@ async def record_move(
     guard = PeriodGuard(session=session)
     await guard.assert_open(tenant_id=tenant_id, entry_date=move_date)
 
-    async with _transaction_scope(session):
+    async def _apply_move() -> tuple[StockMove, StockBalance]:
         balance = await _get_balance_for_update(session, tenant_id, product_id)
         if not balance:
             balance = StockBalance(
@@ -250,6 +252,14 @@ async def record_move(
         )
         session.add(move)
         balance.on_hand_qty_base = new_qty
+        return move, balance
+
+    if commit:
+        async with _transaction_scope(session):
+            move, balance = await _apply_move()
+    else:
+        move, balance = await _apply_move()
+        await session.flush()
 
     await session.refresh(move)
     await session.refresh(balance)

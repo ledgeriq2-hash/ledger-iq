@@ -14,13 +14,16 @@ from app.core.exceptions import AppException
 from app.models.account import Account
 from app.models.account_mapping import AccountMapping
 from app.models.journal_entry import JournalEntry
+from app.models.product import Product, ProductStatus
 from app.models.purchase_invoice import PurchaseInvoice, PurchaseInvoiceStatus
 from app.models.purchase_invoice_line import PurchaseInvoiceLine
+from app.models.stock_move import StockMove, StockMoveDirection
 from app.models.vendor import Vendor
 from app.schemas.journals import JournalLineCreate
-from app.services import settings_service
+from app.services import settings_service, stock_service
 from app.services.ledger_service import DEFAULT_BASE_CURRENCY, LedgerService, STATUS_POSTED, STATUS_REVERSED
 from app.services.period_guard import PeriodGuard
+from app.services.unit_conversion_service import resolve_multiplier
 
 
 def _to_dict(payload: Any, *, exclude_unset: bool = False) -> dict[str, Any]:
@@ -62,6 +65,18 @@ async def _get_account(session: AsyncSession, tenant_id: UUID, account_id: UUID)
     if getattr(account, "is_active", True) is False:
         raise AppException(code="ledger_account_inactive", message="Ledger account is inactive", http_status=409)
     return account
+
+
+async def _get_product(session: AsyncSession, tenant_id: UUID, product_id: UUID) -> Product:
+    result = await session.execute(
+        select(Product).where(Product.id == product_id, Product.tenant_id == tenant_id)
+    )
+    product = result.scalar_one_or_none()
+    if not product:
+        raise AppException(code="product_not_found", message="Product not found", http_status=404)
+    if getattr(product, "status", None) == ProductStatus.INACTIVE:
+        raise AppException(code="product_inactive", message="Product is inactive", http_status=409)
+    return product
 
 
 async def _get_ap_control_account_id(session: AsyncSession, tenant_id: UUID) -> UUID:
@@ -138,6 +153,8 @@ def _normalize_lines(lines: Sequence[dict[str, Any]], *, require_all: bool) -> l
                 "line_no": line.get("line_no"),
                 "description": line.get("description"),
                 "quantity": _quantize(quantity),
+                "product_id": line.get("product_id"),
+                "unit_id": line.get("unit_id"),
                 "unit_price": _quantize(unit_price),
                 "amount": _quantize(amount),
                 "expense_account_id": line.get("expense_account_id"),
@@ -183,6 +200,8 @@ async def _replace_lines(
             line_no=int(line.get("line_no") or 0),
             description=line.get("description"),
             quantity=_quantize(line.get("quantity")),
+            product_id=line.get("product_id"),
+            unit_id=line.get("unit_id"),
             unit_price=_quantize(line.get("unit_price")),
             amount=_quantize(line.get("amount")),
             expense_account_id=expense_account_id,
@@ -231,6 +250,22 @@ async def _find_reversal_entry(session: AsyncSession, tenant_id: UUID, entry_id:
         .order_by(JournalEntry.created_at.desc())
     )
     return result.scalars().first()
+
+
+async def _find_stock_moves(
+    session: AsyncSession,
+    tenant_id: UUID,
+    invoice_id: UUID,
+    reference_type: str,
+) -> list[StockMove]:
+    result = await session.execute(
+        select(StockMove).where(
+            StockMove.tenant_id == tenant_id,
+            StockMove.reference_type == reference_type,
+            StockMove.reference_id == invoice_id,
+        )
+    )
+    return list(result.scalars().all())
 
 
 async def list_purchase_invoices(
@@ -411,10 +446,14 @@ async def post_purchase_invoice(
             http_status=409,
         )
 
-    guard = PeriodGuard(session=session)
-    await guard.assert_open(tenant_id=tenant_id, entry_date=invoice.invoice_date)
-
     invoice_id = invoice.id
+    invoice_date = invoice.invoice_date
+    invoice_no = invoice.invoice_no
+    currency_code = invoice.currency_code
+    entry_date = invoice_date
+
+    guard = PeriodGuard(session=session)
+    await guard.assert_open(tenant_id=tenant_id, entry_date=invoice_date)
     existing_entry = await _find_invoice_entry(session, tenant_id, invoice_id)
     if existing_entry and existing_entry.status == STATUS_POSTED:
         invoice.status = PurchaseInvoiceStatus.POSTED
@@ -443,9 +482,59 @@ async def post_purchase_invoice(
             http_status=409,
         )
 
-    entry_date = invoice.invoice_date
-    invoice_no = invoice.invoice_no
-    currency_code = invoice.currency_code
+    existing_moves = await _find_stock_moves(session, tenant_id, invoice_id, "purchase_invoice")
+    if existing_moves:
+        raise AppException(
+            code="purchase_invoice_stock_exists",
+            message="Stock moves already exist for this purchase invoice",
+            http_status=409,
+        )
+
+    stock_payloads: list[dict[str, Any]] = []
+    product_cache: dict[UUID, Product] = {}
+    for line in invoice.lines:
+        if not line.product_id:
+            raise AppException(
+                code="purchase_invoice_line_product_required",
+                message="Product is required to post purchase invoice",
+                http_status=422,
+            )
+        line_quantity = _quantize(line.quantity)
+        if line_quantity <= 0:
+            raise AppException(
+                code="purchase_invoice_line_quantity_invalid",
+                message="Line quantity must be greater than zero",
+                http_status=422,
+            )
+        product = product_cache.get(line.product_id)
+        if not product:
+            product = await _get_product(session, tenant_id, line.product_id)
+            product_cache[product.id] = product
+        base_unit_id = product.base_unit_id
+        if not base_unit_id:
+            raise AppException(
+                code="product_base_unit_required",
+                message="Product base unit is required for inventory posting",
+                http_status=422,
+            )
+        unit_id = line.unit_id or base_unit_id
+        if unit_id == base_unit_id:
+            quantity_base = line_quantity
+        else:
+            multiplier = await resolve_multiplier(session, tenant_id, unit_id, base_unit_id)
+            quantity_base = _quantize(line_quantity * multiplier)
+        stock_payloads.append(
+            {
+                "product_id": product.id,
+                "move_date": invoice_date,
+                "direction": StockMoveDirection.IN,
+                "quantity_base": quantity_base,
+                "unit_id": unit_id,
+                "quantity_original": line_quantity,
+                "reference_type": "purchase_invoice",
+                "reference_id": invoice_id,
+            }
+        )
 
     ap_account_id = await _get_ap_control_account_id(session, tenant_id)
     currency = await _resolve_currency(session, tenant_id, currency_code)
@@ -487,6 +576,8 @@ async def post_purchase_invoice(
                 commit=False,
             )
             posted_entry = await ledger.post_entry(entry.id, commit=False)
+        for payload in stock_payloads:
+            await stock_service.record_move(session, tenant_id, payload, commit=False)
         invoice.status = PurchaseInvoiceStatus.POSTED
         invoice.posted_at = posted_entry.posted_at or datetime.now(UTC)
         invoice.total_amount = total_amount
@@ -516,10 +607,13 @@ async def reverse_purchase_invoice(
             http_status=409,
         )
 
-    guard = PeriodGuard(session=session)
-    await guard.assert_open(tenant_id=tenant_id, entry_date=invoice.invoice_date)
+    invoice_id = invoice.id
+    invoice_date = invoice.invoice_date
 
-    entry = await _find_invoice_entry(session, tenant_id, invoice.id)
+    guard = PeriodGuard(session=session)
+    await guard.assert_open(tenant_id=tenant_id, entry_date=invoice_date)
+
+    entry = await _find_invoice_entry(session, tenant_id, invoice_id)
     if not entry:
         raise AppException(
             code="purchase_invoice_missing_journal_entry",
@@ -541,12 +635,32 @@ async def reverse_purchase_invoice(
         await session.refresh(invoice)
         return invoice
 
-    ledger = LedgerService(session=session, tenant_id=tenant_id, actor_id=actor_id)
-    reversed_entry = await ledger.reverse_entry(entry.id, reason=reason.strip())
+    stock_moves = await _find_stock_moves(session, tenant_id, invoice_id, "purchase_invoice")
+    reversal_moves = await _find_stock_moves(session, tenant_id, invoice_id, "purchase_invoice_reverse")
 
-    invoice.status = PurchaseInvoiceStatus.REVERSED
-    invoice.reversed_at = reversed_entry.posted_at or datetime.now(UTC)
-    await session.commit()
+    async with _transaction_scope(session):
+        ledger = LedgerService(session=session, tenant_id=tenant_id, actor_id=actor_id)
+        reversed_entry = await ledger.reverse_entry(entry.id, reason=reason.strip(), commit=False)
+        if stock_moves and not reversal_moves:
+            for move in stock_moves:
+                await stock_service.record_move(
+                    session,
+                    tenant_id,
+                    {
+                        "product_id": move.product_id,
+                        "move_date": invoice_date,
+                        "direction": StockMoveDirection.OUT,
+                        "quantity_base": _quantize(move.quantity_base),
+                        "unit_id": move.unit_id,
+                        "quantity_original": move.quantity_original,
+                        "reference_type": "purchase_invoice_reverse",
+                        "reference_id": invoice_id,
+                    },
+                    commit=False,
+                )
+        invoice.status = PurchaseInvoiceStatus.REVERSED
+        invoice.reversed_at = reversed_entry.posted_at or datetime.now(UTC)
+
     await session.refresh(invoice)
     return invoice
 
