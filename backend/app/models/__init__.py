@@ -35,6 +35,8 @@ from app.models.recurring_invoice import RecurringInvoice
 from app.models.refresh_token import RefreshToken
 from app.models.reports_cache import ReportsCache
 from app.models.role import Role
+from app.models.sales_invoice import SalesInvoice, SalesInvoiceStatus
+from app.models.sales_invoice_line import SalesInvoiceLine
 from app.models.stock_movement import StockMovement
 from app.models.stripe_event import StripeEvent
 from app.models.supplier import Supplier
@@ -89,6 +91,8 @@ ALL_MODELS = [
     RefreshToken,
     ReportsCache,
     Role,
+    SalesInvoice,
+    SalesInvoiceLine,
     StockMovement,
     StripeEvent,
     Supplier,
@@ -141,6 +145,9 @@ __all__ = [
     "RefreshToken",
     "ReportsCache",
     "Role",
+    "SalesInvoice",
+    "SalesInvoiceLine",
+    "SalesInvoiceStatus",
     "StockMovement",
     "StripeEvent",
     "Supplier",
