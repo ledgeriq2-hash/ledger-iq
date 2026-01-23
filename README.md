@@ -28,7 +28,7 @@ If port 5432 is already in use, set `POSTGRES_PORT` (for example in `.env`) befo
 
 ## Migrations (Docker)
 ```powershell
-docker compose exec backend alembic upgrade head
+docker compose exec backend python -m alembic upgrade head
 ```
 
 ## Seed defaults (Docker)
@@ -62,10 +62,10 @@ Copy-Item .\.env.example .\.env.development -Force
 
 # run migrations
 $env:ENVIRONMENT = "development"
-alembic upgrade head
+python -m alembic upgrade head
 
 # run API
-uvicorn app.main:app --reload --port 8000
+python -m uvicorn app.main:app --reload --port 8000
 ```
 
 Health: `http://localhost:8000/health`
@@ -122,6 +122,9 @@ python scripts/verify_sprint4.py
 python scripts/verify_sprint5.py
 python scripts/verify_sprint6.py
 ```
+
+For a single canonical local-dev path (venv, env vars, migrations, seed, server, verifiers),
+see `docs/LOCAL_DEV.md`.
 
 ## Sprint 2 verification (COA + Ledger)
 ```powershell

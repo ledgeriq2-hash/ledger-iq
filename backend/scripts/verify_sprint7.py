@@ -152,27 +152,15 @@ def _has_get_operation(operations: object) -> bool:
     return any(str(key).lower() == "get" for key in operations.keys())
 
 
-def _select_best_path(
-    label: str,
-    candidates: list[str],
-    preferences: list[tuple[str, int]],
-) -> str:
-    if not candidates:
-        raise VerificationError(f"{label} endpoint not found in OpenAPI schema")
-    if len(candidates) == 1:
-        return candidates[0]
-
-    def score(path: str) -> tuple[int, int, int]:
-        lower = path.lower()
-        token_score = 0
-        for token, weight in preferences:
-            if token in lower:
-                token_score += weight
-        param_score = -lower.count("{")
-        length_score = -len(path)
-        return (token_score, param_score, length_score)
-
-    return max(sorted(candidates), key=score)
+def _require_path(paths: dict, required: str, label: str) -> str:
+    operations = paths.get(required)
+    if not operations:
+        candidates = [path for path in paths if required.split("/")[-1] in path]
+        hint = f" candidates: {', '.join(sorted(candidates))}" if candidates else ""
+        raise VerificationError(f"{label} endpoint not found in OpenAPI schema: {required}{hint}")
+    if not _has_get_operation(operations):
+        raise VerificationError(f"{label} endpoint missing GET operation: {required}")
+    return required
 
 
 def _resolve_report_paths() -> tuple[str, str]:
@@ -181,43 +169,11 @@ def _resolve_report_paths() -> tuple[str, str]:
     if not isinstance(paths, dict):
         raise VerificationError("OpenAPI schema missing paths")
 
-    trial_candidates: list[str] = []
-    ledger_candidates: list[str] = []
-
-    for path, operations in paths.items():
-        if not _has_get_operation(operations):
-            continue
-        lower = path.lower()
-        if "trial-balance" in lower or "trial_balance" in lower or (
-            "trial" in lower and "balance" in lower
-        ):
-            trial_candidates.append(path)
-        if "general-ledger" in lower or "general_ledger" in lower or (
-            "general" in lower and "ledger" in lower
-        ):
-            ledger_candidates.append(path)
-
-    trial_path = _select_best_path(
-        "trial balance GET",
-        trial_candidates,
-        [
-            ("trial-balance", 3),
-            ("trial_balance", 3),
-            ("trial", 1),
-            ("balance", 1),
-            ("reports", 1),
-        ],
+    trial_path = _require_path(
+        paths, "/api/v1/reports/trial-balance", "trial balance GET"
     )
-    ledger_path = _select_best_path(
-        "general ledger GET",
-        ledger_candidates,
-        [
-            ("general-ledger", 3),
-            ("general_ledger", 3),
-            ("general", 1),
-            ("ledger", 1),
-            ("reports", 1),
-        ],
+    ledger_path = _require_path(
+        paths, "/api/v1/reports/general-ledger/{account_id}", "general ledger GET"
     )
 
     return trial_path, ledger_path
