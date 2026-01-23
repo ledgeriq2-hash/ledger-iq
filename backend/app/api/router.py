@@ -30,6 +30,7 @@ from app.api.v1.roles import router as roles_router
 from app.api.v1.suppliers import router as suppliers_router
 from app.api.v1.tenants import router as tenants_router
 from app.api.v1.treasury import router as treasury_router
+from app.api.v1.treasury_cash import router as treasury_cash_router
 
 _include(accounts_router, prefix="/v1", tags=["accounts"])
 _include(customers_router, prefix="/v1", tags=["customers"])
@@ -45,6 +46,7 @@ _include(roles_router, prefix="/v1", tags=["roles"])
 _include(suppliers_router, prefix="/v1", tags=["suppliers"])
 _include(tenants_router, prefix="/v1", tags=["tenants"])
 _include(treasury_router, prefix="/v1", tags=["treasury"])
+_include(treasury_cash_router, prefix="/v1", tags=["treasury_cash"])
 
 if settings.feature_optional_routes:
     from app.api.v1.admin import router as admin_router

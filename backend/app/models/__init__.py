@@ -43,6 +43,12 @@ from app.models.tenant_config import TenantConfig
 from app.models.tenant_daily_usage import TenantDailyUsage
 from app.models.tenant_subscription import TenantSubscription
 from app.models.treasury import Treasury
+from app.models.treasury_cash_account import TreasuryCashAccount
+from app.models.treasury_cash_transaction import (
+    CashTransactionStatus,
+    CashTransactionType,
+    TreasuryCashTransaction,
+)
 from app.models.treasury_transaction import TreasuryTransaction
 from app.models.user import User
 
@@ -91,6 +97,8 @@ ALL_MODELS = [
     TenantDailyUsage,
     TenantSubscription,
     Treasury,
+    TreasuryCashAccount,
+    TreasuryCashTransaction,
     TreasuryTransaction,
     User,
 ]
@@ -141,6 +149,10 @@ __all__ = [
     "TenantDailyUsage",
     "TenantSubscription",
     "Treasury",
+    "TreasuryCashAccount",
+    "CashTransactionStatus",
+    "CashTransactionType",
+    "TreasuryCashTransaction",
     "TreasuryTransaction",
     "User",
     "ALL_MODELS",

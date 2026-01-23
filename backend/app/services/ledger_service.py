@@ -192,6 +192,7 @@ class LedgerService:
         source_type: str,
         source_id: uuid.UUID | None,
         lines: list,
+        commit: bool = True,
     ) -> JournalEntry:
         await self._require_permission(PermissionCode.JOURNAL_MANUAL_CREATE.value)
         normalized_currency = self._normalize_currency(base_currency)
@@ -242,10 +243,13 @@ class LedgerService:
                 )
             )
 
-        await self.session.commit()
+        if commit:
+            await self.session.commit()
+        else:
+            await self.session.flush()
         return await self._load_entry(entry.id, include_lines=True)
 
-    async def post_entry(self, entry_id: uuid.UUID) -> JournalEntry:
+    async def post_entry(self, entry_id: uuid.UUID, *, commit: bool = True) -> JournalEntry:
         await self._require_permission(PermissionCode.JOURNAL_POST.value)
         entry = await self._load_entry(entry_id, include_lines=True)
         if entry.status != STATUS_DRAFT:
@@ -301,10 +305,19 @@ class LedgerService:
             period_month=entry.period_month,
             commit=False,
         )
-        await self.session.commit()
+        if commit:
+            await self.session.commit()
+        else:
+            await self.session.flush()
         return await self._load_entry(entry.id, include_lines=True)
 
-    async def reverse_entry(self, entry_id: uuid.UUID, *, reason: str) -> JournalEntry:
+    async def reverse_entry(
+        self,
+        entry_id: uuid.UUID,
+        *,
+        reason: str,
+        commit: bool = True,
+    ) -> JournalEntry:
         await self._require_permission(PermissionCode.JOURNAL_REVERSE.value)
         if not reason or not reason.strip():
             raise AppException(
@@ -425,7 +438,10 @@ class LedgerService:
             commit=False,
         )
         try:
-            await self.session.commit()
+            if commit:
+                await self.session.commit()
+            else:
+                await self.session.flush()
         except IntegrityError as exc:
             await self.session.rollback()
             if _is_unique_reversal_violation(exc):

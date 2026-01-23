@@ -28,6 +28,7 @@ __all__ = [
     "recurring_invoice_service",
     "stock_movement_service",
     "treasury_service",
+    "treasury_cash_service",
     "debt_service",
     "settings_service",
     "ai_insights_service",
