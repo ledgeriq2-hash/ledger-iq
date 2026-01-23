@@ -434,8 +434,12 @@ async def post_sales_invoice(
             http_status=409,
         )
 
+    entry_date = invoice.invoice_date
+    invoice_no = invoice.invoice_no
+    currency_code = invoice.currency_code
+
     ar_account_id = await _get_ar_control_account_id(session, tenant_id)
-    currency = await _resolve_currency(session, tenant_id, invoice.currency_code)
+    currency = await _resolve_currency(session, tenant_id, currency_code)
 
     lines: list[JournalLineCreate] = [
         JournalLineCreate(
@@ -443,7 +447,7 @@ async def post_sales_invoice(
             debit_amount=total_amount,
             credit_amount=Decimal("0.00"),
             line_currency=currency,
-            memo=f"Sales invoice {invoice.invoice_no}",
+            memo=f"Sales invoice {invoice_no}",
         )
     ]
     for line in invoice.lines:
@@ -454,7 +458,7 @@ async def post_sales_invoice(
                 debit_amount=Decimal("0.00"),
                 credit_amount=_quantize(line.amount),
                 line_currency=currency,
-                memo=f"Sales invoice {invoice.invoice_no}",
+                memo=f"Sales invoice {invoice_no}",
             )
         )
 
@@ -465,9 +469,9 @@ async def post_sales_invoice(
             posted_entry = await ledger.post_entry(entry.id, commit=False)
         else:
             entry = await ledger.create_manual_entry(
-                entry_date=invoice.invoice_date,
+                entry_date=entry_date,
                 base_currency=currency,
-                memo=f"Sales invoice {invoice.invoice_no}",
+                memo=f"Sales invoice {invoice_no}",
                 source_type="sales_invoice",
                 source_id=invoice.id,
                 lines=lines,
