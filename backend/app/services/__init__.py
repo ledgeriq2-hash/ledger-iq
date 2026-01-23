@@ -38,4 +38,7 @@ __all__ = [
     "dimension_service",
     "dimension_value_service",
     "journal_line_dimension_service",
+    "unit_service",
+    "unit_conversion_service",
+    "stock_service",
 ]
