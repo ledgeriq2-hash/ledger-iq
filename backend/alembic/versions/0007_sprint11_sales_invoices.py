@@ -7,17 +7,19 @@ Create Date: 2026-01-23 00:00:00.000000
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 revision = "0007_sprint11_sales_invoices"
 down_revision = "0006_sprint9_treasury_cash"
 branch_labels = None
 depends_on = None
 
-sales_invoice_status_enum = sa.Enum(
+sales_invoice_status_enum = postgresql.ENUM(
     "DRAFT",
     "POSTED",
     "REVERSED",
     name="sales_invoice_status",
+    create_type=False,
 )
 
 
