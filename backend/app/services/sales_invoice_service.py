@@ -406,7 +406,8 @@ async def post_sales_invoice(
     guard = PeriodGuard(session=session)
     await guard.assert_open(tenant_id=tenant_id, entry_date=invoice.invoice_date)
 
-    existing_entry = await _find_invoice_entry(session, tenant_id, invoice.id)
+    invoice_id = invoice.id
+    existing_entry = await _find_invoice_entry(session, tenant_id, invoice_id)
     if existing_entry and existing_entry.status == STATUS_POSTED:
         invoice.status = SalesInvoiceStatus.POSTED
         invoice.posted_at = existing_entry.posted_at or existing_entry.posting_date or datetime.now(UTC)
@@ -473,7 +474,7 @@ async def post_sales_invoice(
                 base_currency=currency,
                 memo=f"Sales invoice {invoice_no}",
                 source_type="sales_invoice",
-                source_id=invoice.id,
+                source_id=invoice_id,
                 lines=lines,
                 commit=False,
             )
