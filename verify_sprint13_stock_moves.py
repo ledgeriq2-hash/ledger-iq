@@ -292,32 +292,6 @@ async def run() -> None:
         if _quantize(balance_after_fail.get("on_hand_qty_base", 0)) != Decimal("6.00"):
             raise VerificationError("balance changed after failed OUT move")
 
-        await _expect_status(
-            client,
-            "POST",
-            "/api/v1/journals/period-locks",
-            201,
-            headers=admin_headers,
-            json={"start_date": move_date.isoformat(), "end_date": move_date.isoformat()},
-        )
-
-        locked_resp = await client.post(
-            "/api/v1/stock/moves",
-            headers=admin_headers,
-            json={
-                "product_id": product_id,
-                "move_date": move_date.isoformat(),
-                "direction": "IN",
-                "quantity_base": "1",
-                "reference_type": "manual_adjustment",
-                "reference_id": str(uuid.uuid4()),
-            },
-        )
-        if locked_resp.status_code != 409:
-            raise VerificationError("move in locked period did not fail")
-        if locked_resp.json().get("code") != "accounting_period_locked":
-            raise VerificationError("locked period error code mismatch")
-
         ref_type = "sales_invoice"
         ref_id = str(uuid.uuid4())
         ref_move = await _expect_status(
@@ -352,6 +326,32 @@ async def run() -> None:
             raise VerificationError("filtered moves missing items")
         if not any(item.get("id") == ref_move_id for item in items):
             raise VerificationError("filtered moves missing reference move")
+
+        await _expect_status(
+            client,
+            "POST",
+            "/api/v1/journals/period-locks",
+            201,
+            headers=admin_headers,
+            json={"start_date": move_date.isoformat(), "end_date": move_date.isoformat()},
+        )
+
+        locked_resp = await client.post(
+            "/api/v1/stock/moves",
+            headers=admin_headers,
+            json={
+                "product_id": product_id,
+                "move_date": move_date.isoformat(),
+                "direction": "IN",
+                "quantity_base": "1",
+                "reference_type": "manual_adjustment",
+                "reference_id": str(uuid.uuid4()),
+            },
+        )
+        if locked_resp.status_code != 409:
+            raise VerificationError("move in locked period did not fail")
+        if locked_resp.json().get("code") != "accounting_period_locked":
+            raise VerificationError("locked period error code mismatch")
 
     print("Sprint 13 stock moves verification: OK")
 
