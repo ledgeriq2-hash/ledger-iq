@@ -31,6 +31,8 @@ from app.models.notification import Notification
 from app.models.payment import Payment
 from app.models.portal_token import PortalToken
 from app.models.product import Product
+from app.models.purchase_invoice import PurchaseInvoice, PurchaseInvoiceStatus
+from app.models.purchase_invoice_line import PurchaseInvoiceLine
 from app.models.recurring_invoice import RecurringInvoice
 from app.models.refresh_token import RefreshToken
 from app.models.reports_cache import ReportsCache
@@ -53,6 +55,7 @@ from app.models.treasury_cash_transaction import (
 )
 from app.models.treasury_transaction import TreasuryTransaction
 from app.models.user import User
+from app.models.vendor import Vendor, VendorStatus
 
 ALL_MODELS = [
     ActivityLog,
@@ -87,6 +90,8 @@ ALL_MODELS = [
     Payment,
     PortalToken,
     Product,
+    PurchaseInvoice,
+    PurchaseInvoiceLine,
     RecurringInvoice,
     RefreshToken,
     ReportsCache,
@@ -105,6 +110,7 @@ ALL_MODELS = [
     TreasuryCashTransaction,
     TreasuryTransaction,
     User,
+    Vendor,
 ]
 
 
@@ -141,6 +147,9 @@ __all__ = [
     "Payment",
     "PortalToken",
     "Product",
+    "PurchaseInvoice",
+    "PurchaseInvoiceLine",
+    "PurchaseInvoiceStatus",
     "RecurringInvoice",
     "RefreshToken",
     "ReportsCache",
@@ -162,5 +171,7 @@ __all__ = [
     "TreasuryCashTransaction",
     "TreasuryTransaction",
     "User",
+    "Vendor",
+    "VendorStatus",
     "ALL_MODELS",
 ]
