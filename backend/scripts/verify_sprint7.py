@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import subprocess
 import sys
 import uuid
@@ -57,6 +58,7 @@ def _prepare_environment() -> None:
     os.environ.setdefault("ENVIRONMENT", "development")
     os.environ.setdefault("CSRF_ENABLED", "false")
     os.environ.setdefault("BILLING_ENABLED", "false")
+    os.environ.setdefault("FEATURE_OPTIONAL_ROUTES", "true")
     os.environ.setdefault("JWT_SECRET_KEY", "dev-jwt-secret-key")
     os.environ.setdefault("JWT_REFRESH_SECRET_KEY", "dev-jwt-refresh-secret-key")
     os.environ.setdefault("STRIPE_API_KEY", "sk_test_dummy")
@@ -129,6 +131,123 @@ def _pick_account(accounts: list[Account], account_type: str) -> Account:
 
 def _auth_headers(token: str, tenant_id: uuid.UUID) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}", "X-Tenant-Id": str(tenant_id)}
+
+
+_PATH_PARAM_PATTERN = re.compile(r"{([^}]+)}")
+
+
+def _load_openapi_schema() -> dict:
+    try:
+        schema = app.openapi()
+    except Exception as exc:
+        raise VerificationError("failed to load OpenAPI schema") from exc
+    if not isinstance(schema, dict):
+        raise VerificationError("OpenAPI schema is not a dictionary")
+    return schema
+
+
+def _has_get_operation(operations: object) -> bool:
+    if not isinstance(operations, dict):
+        return False
+    return any(str(key).lower() == "get" for key in operations.keys())
+
+
+def _select_best_path(
+    label: str,
+    candidates: list[str],
+    preferences: list[tuple[str, int]],
+) -> str:
+    if not candidates:
+        raise VerificationError(f"{label} endpoint not found in OpenAPI schema")
+    if len(candidates) == 1:
+        return candidates[0]
+
+    def score(path: str) -> tuple[int, int, int]:
+        lower = path.lower()
+        token_score = 0
+        for token, weight in preferences:
+            if token in lower:
+                token_score += weight
+        param_score = -lower.count("{")
+        length_score = -len(path)
+        return (token_score, param_score, length_score)
+
+    return max(sorted(candidates), key=score)
+
+
+def _resolve_report_paths() -> tuple[str, str]:
+    schema = _load_openapi_schema()
+    paths = schema.get("paths") or {}
+    if not isinstance(paths, dict):
+        raise VerificationError("OpenAPI schema missing paths")
+
+    trial_candidates: list[str] = []
+    ledger_candidates: list[str] = []
+
+    for path, operations in paths.items():
+        if not _has_get_operation(operations):
+            continue
+        lower = path.lower()
+        if "trial-balance" in lower or "trial_balance" in lower or (
+            "trial" in lower and "balance" in lower
+        ):
+            trial_candidates.append(path)
+        if "general-ledger" in lower or "general_ledger" in lower or (
+            "general" in lower and "ledger" in lower
+        ):
+            ledger_candidates.append(path)
+
+    trial_path = _select_best_path(
+        "trial balance GET",
+        trial_candidates,
+        [
+            ("trial-balance", 3),
+            ("trial_balance", 3),
+            ("trial", 1),
+            ("balance", 1),
+            ("reports", 1),
+        ],
+    )
+    ledger_path = _select_best_path(
+        "general ledger GET",
+        ledger_candidates,
+        [
+            ("general-ledger", 3),
+            ("general_ledger", 3),
+            ("general", 1),
+            ("ledger", 1),
+            ("reports", 1),
+        ],
+    )
+
+    return trial_path, ledger_path
+
+
+def _build_path_values(tenant_id: uuid.UUID, account_id: uuid.UUID) -> dict[str, str]:
+    account_value = str(account_id)
+    tenant_value = str(tenant_id)
+    return {
+        "account_id": account_value,
+        "accountid": account_value,
+        "id": account_value,
+        "tenant_id": tenant_value,
+        "tenantid": tenant_value,
+    }
+
+
+def _format_path(path_template: str, values: dict[str, str]) -> str:
+    def replace(match: re.Match[str]) -> str:
+        key = match.group(1)
+        if key in values:
+            return values[key]
+        lower = key.lower()
+        if lower in values:
+            return values[lower]
+        raise VerificationError(
+            f"missing path parameter '{key}' for endpoint {path_template}"
+        )
+
+    return _PATH_PARAM_PATTERN.sub(replace, path_template)
 
 
 async def run() -> None:
@@ -299,10 +418,15 @@ async def run() -> None:
     admin_headers = _auth_headers(admin_token, tenant_id)
     noaccess_headers = _auth_headers(noaccess_token, tenant_id)
 
+    trial_balance_template, general_ledger_template = _resolve_report_paths()
+    path_values = _build_path_values(tenant_id=tenant_id, account_id=liability_account.id)
+    trial_balance_path = _format_path(trial_balance_template, path_values)
+    general_ledger_path = _format_path(general_ledger_template, path_values)
+
     transport = ASGITransport(app=app, raise_app_exceptions=False)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         tb_response = await client.get(
-            "/api/v1/reports/trial-balance",
+            trial_balance_path,
             params={"from_date": date_one.isoformat(), "to_date": date.today().isoformat()},
             headers=admin_headers,
         )
@@ -349,7 +473,7 @@ async def run() -> None:
             raise VerificationError("trial balance totals not balanced")
 
         tb_zero_response = await client.get(
-            "/api/v1/reports/trial-balance",
+            trial_balance_path,
             params={
                 "from_date": date_one.isoformat(),
                 "to_date": date.today().isoformat(),
@@ -364,7 +488,7 @@ async def run() -> None:
             raise VerificationError("include_zero did not include zero-balance account")
 
         gl_response = await client.get(
-            f"/api/v1/reports/general-ledger/{liability_account.id}",
+            general_ledger_path,
             params={"from_date": date_one.isoformat(), "to_date": date.today().isoformat()},
             headers=admin_headers,
         )
@@ -381,7 +505,7 @@ async def run() -> None:
             raise VerificationError("general ledger running balance incorrect")
 
         mixed_response = await client.get(
-            "/api/v1/reports/trial-balance",
+            trial_balance_path,
             params={"from_date": date_one.isoformat(), "to_date": future_date.isoformat()},
             headers=admin_headers,
         )
@@ -391,7 +515,7 @@ async def run() -> None:
             raise VerificationError("mixed currency error code missing")
 
         deny_response = await client.get(
-            "/api/v1/reports/trial-balance",
+            trial_balance_path,
             params={"from_date": date_one.isoformat(), "to_date": date.today().isoformat()},
             headers=noaccess_headers,
         )
