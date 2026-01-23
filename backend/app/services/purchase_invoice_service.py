@@ -620,6 +620,7 @@ async def reverse_purchase_invoice(
             message="Posted purchase invoice is missing journal entry",
             http_status=409,
         )
+    entry_id = entry.id
     if entry.status == STATUS_REVERSED or entry.is_reversed:
         invoice.status = PurchaseInvoiceStatus.REVERSED
         invoice.reversed_at = datetime.now(UTC)
@@ -627,7 +628,7 @@ async def reverse_purchase_invoice(
         await session.refresh(invoice)
         return invoice
 
-    reversal_entry = await _find_reversal_entry(session, tenant_id, entry.id)
+    reversal_entry = await _find_reversal_entry(session, tenant_id, entry_id)
     if reversal_entry:
         invoice.status = PurchaseInvoiceStatus.REVERSED
         invoice.reversed_at = reversal_entry.posted_at or reversal_entry.posting_date or datetime.now(UTC)
@@ -640,7 +641,7 @@ async def reverse_purchase_invoice(
 
     async with _transaction_scope(session):
         ledger = LedgerService(session=session, tenant_id=tenant_id, actor_id=actor_id)
-        reversed_entry = await ledger.reverse_entry(entry.id, reason=reason.strip(), commit=False)
+        reversed_entry = await ledger.reverse_entry(entry_id, reason=reason.strip(), commit=False)
         if stock_moves and not reversal_moves:
             for move in stock_moves:
                 await stock_service.record_move(
