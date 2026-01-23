@@ -631,22 +631,26 @@ async def reverse_sales_invoice(
 
     stock_moves = await _find_stock_moves(session, tenant_id, invoice_id, "sales_invoice")
     reversal_moves = await _find_stock_moves(session, tenant_id, invoice_id, "sales_invoice_reverse")
+    move_payloads = [
+        (move.product_id, _quantize(move.quantity_base), move.unit_id, move.quantity_original)
+        for move in stock_moves
+    ]
 
     async with _transaction_scope(session):
         ledger = LedgerService(session=session, tenant_id=tenant_id, actor_id=actor_id)
         reversed_entry = await ledger.reverse_entry(entry_id, reason=reason.strip(), commit=False)
-        if stock_moves and not reversal_moves:
-            for move in stock_moves:
+        if move_payloads and not reversal_moves:
+            for product_id, quantity_base, unit_id, quantity_original in move_payloads:
                 await stock_service.record_move(
                     session,
                     tenant_id,
                     {
-                        "product_id": move.product_id,
+                        "product_id": product_id,
                         "move_date": invoice_date,
                         "direction": StockMoveDirection.IN,
-                        "quantity_base": _quantize(move.quantity_base),
-                        "unit_id": move.unit_id,
-                        "quantity_original": move.quantity_original,
+                        "quantity_base": quantity_base,
+                        "unit_id": unit_id,
+                        "quantity_original": quantity_original,
                         "reference_type": "sales_invoice_reverse",
                         "reference_id": invoice_id,
                     },
