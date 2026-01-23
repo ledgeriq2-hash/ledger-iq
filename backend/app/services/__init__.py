@@ -12,6 +12,7 @@ __all__ = [
     "product_service",
     "report_service",
     "role_service",
+    "sales_invoice_service",
     "supplier_service",
     "tenant_service",
     "user_service",

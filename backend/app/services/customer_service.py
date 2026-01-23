@@ -75,6 +75,8 @@ def _audit_payload(customer: Customer) -> dict[str, Any]:
         "email": customer.email,
         "phone": customer.phone,
         "tax_id": customer.tax_id,
+        "currency_code": customer.currency_code,
+        "payment_terms_days": customer.payment_terms_days,
         "notes": customer.notes,
         "metadata": customer.metadata_json,
         "status": _audit_value(customer.status),
@@ -92,7 +94,23 @@ async def create_customer(
     data = _to_dict(payload)
     if "metadata" in data and "metadata_json" not in data:
         data["metadata_json"] = data.pop("metadata")
-    data.pop("status", None)
+    status = data.get("status")
+    if status is not None:
+        try:
+            status = CustomerStatus(status)
+        except Exception as exc:
+            raise AppException(
+                code="customer_status_invalid",
+                message="Customer status is invalid",
+                http_status=422,
+            ) from exc
+        if status == CustomerStatus.DELETED:
+            raise AppException(
+                code="customer_status_invalid",
+                message="Customer status is invalid",
+                http_status=422,
+            )
+        data["status"] = status
     data.pop("deleted_at", None)
     code = (data.get("code") or "").strip()
     name = (data.get("name") or "").strip()
@@ -169,33 +187,93 @@ async def update_customer(
     data = _to_dict(payload, exclude_unset=True)
     if "metadata" in data and "metadata_json" not in data:
         data["metadata_json"] = data.pop("metadata")
-    allowed_fields = {"name", "email", "phone", "tax_id", "notes", "metadata_json"}
+    allowed_fields = {
+        "code",
+        "name",
+        "email",
+        "phone",
+        "tax_id",
+        "currency_code",
+        "payment_terms_days",
+        "notes",
+        "metadata_json",
+        "status",
+    }
     changes = {field: value for field, value in data.items() if field in allowed_fields}
     if not changes:
         return customer
+    if "code" in changes:
+        code = (changes.get("code") or "").strip()
+        if not code:
+            raise AppException(
+                code="customer_code_required",
+                message="Customer code is required",
+                http_status=422,
+            )
+        existing = await session.execute(
+            select(Customer.id).where(
+                Customer.tenant_id == tenant_id,
+                Customer.code == code,
+                Customer.id != customer_id,
+            )
+        )
+        if existing.scalar_one_or_none():
+            raise AppException(
+                code="customer_code_exists",
+                message="Customer code already exists",
+                http_status=409,
+            )
+        changes["code"] = code
+    if "status" in changes and changes["status"] is not None:
+        try:
+            status = CustomerStatus(changes["status"])
+        except Exception as exc:
+            raise AppException(
+                code="customer_status_invalid",
+                message="Customer status is invalid",
+                http_status=422,
+            ) from exc
+        if status == CustomerStatus.DELETED:
+            raise AppException(
+                code="customer_status_invalid",
+                message="Customer status is invalid",
+                http_status=422,
+            )
+        changes["status"] = status
     old_data = {
         ("metadata" if field == "metadata_json" else field): _audit_value(getattr(customer, field))
         for field in changes
     }
     for field, value in changes.items():
         setattr(customer, field, value)
-    await session.flush()
-    new_data = {
-        ("metadata" if field == "metadata_json" else field): _audit_value(getattr(customer, field))
-        for field in changes
-    }
-    await audit_log_service.record_audit_log(
-        session,
-        tenant_id,
-        "customers",
-        str(customer.id),
-        "CUSTOMER.UPDATE",
-        user_id=actor_id,
-        old_data=old_data,
-        new_data=new_data,
-        commit=False,
-    )
-    await session.commit()
+    try:
+        await session.flush()
+        new_data = {
+            ("metadata" if field == "metadata_json" else field): _audit_value(getattr(customer, field))
+            for field in changes
+        }
+        await audit_log_service.record_audit_log(
+            session,
+            tenant_id,
+            "customers",
+            str(customer.id),
+            "CUSTOMER.UPDATE",
+            user_id=actor_id,
+            old_data=old_data,
+            new_data=new_data,
+            commit=False,
+        )
+        await session.commit()
+    except IntegrityError as exc:
+        await session.rollback()
+        message = str(getattr(exc, "orig", exc))
+        if "uq_customers_tenant_code" in message or "customers_tenant_id_code" in message:
+            raise AppException(
+                code="customer_code_exists",
+                message="Customer code already exists",
+                http_status=409,
+            ) from exc
+        raise
     await session.refresh(customer)
     return customer
 
