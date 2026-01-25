@@ -1,0 +1,30 @@
+{
+  "schema_version": "1.0",
+  "run_meta": {
+    "model_name": "ledger-forecast-lstm",
+    "model_version": "2026.01",
+    "dataset_fingerprint": "sha256:3b6f0d7a1c8e4f2a9b7c1d5e2a6c8f0b",
+    "created_at": "2026-01-24T22:15:00Z",
+    "created_by": "data-science@ledgeriq.ai",
+    "date_from": "2025-10-01",
+    "date_to": "2025-12-31",
+    "scenario": "baseline"
+  },
+  "payload": {
+    "forecast": {
+      "currency": "USD",
+      "horizon_days": 30,
+      "points": [
+        {"date": "2026-02-01", "value": 1200.0},
+        {"date": "2026-02-15", "value": 1250.0}
+      ]
+    },
+    "risk": {
+      "overall": "low",
+      "factors": [
+        {"name": "seasonality", "score": 0.2},
+        {"name": "customer_concentration", "score": 0.3}
+      ]
+    }
+  }
+}

@@ -63,6 +63,7 @@ _include(vendors_router, prefix="/v1", tags=["vendors"])
 if settings.feature_optional_routes:
     from app.api.v1.admin import router as admin_router
     from app.api.v1.ai import router as ai_router
+    from app.api.v1.ai_runs import router as ai_runs_router
     from app.api.v1.auth import router as auth_router
     from app.api.v1.billing import router as billing_router
     from app.api.v1.dashboard import router as dashboard_router
@@ -98,6 +99,7 @@ if settings.feature_optional_routes:
     _include(portal_router, prefix="/v1", tags=["portal"])
     _include(reports_router, prefix="/v1", tags=["reports"])
     _include(ai_router, prefix="/v1", tags=["ai"])
+    _include(ai_runs_router, prefix="/v1", tags=["ai"])
     _include(ml_router, prefix="/v1", tags=["ml"])
     _include(dev_router, prefix="/v1", tags=["dev"])
     _include(admin_router, prefix="/v1", tags=["admin"])

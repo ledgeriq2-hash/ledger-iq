@@ -166,7 +166,7 @@ async def overview(
     return await ai_service.get_ai_overview(session, tenant_id)
 
 
-@router.get("/runs", response_model=AiRunList)
+@router.get("/legacy-runs", response_model=AiRunList)
 async def list_runs(
     session: AsyncSession = Depends(deps.get_db),
     tenant_id: UUID = Depends(deps.get_current_tenant),
