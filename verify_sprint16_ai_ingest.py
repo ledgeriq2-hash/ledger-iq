@@ -1,17 +1,13 @@
 from __future__ import annotations
 
 import asyncio
-import importlib.util
 import json
 import os
 import sys
-import types
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import UUID
-
-import httpx
 
 
 class VerificationError(RuntimeError):
@@ -62,6 +58,18 @@ def _prepare_environment() -> None:
     loaded = _load_env_with_dotenv()
     if not loaded and not _load_env_fallback():
         print("verify_sprint16_ai_ingest: env file not loaded; relying on process environment")
+    os.environ.setdefault("ENVIRONMENT", "development")
+    os.environ.setdefault("CSRF_ENABLED", "false")
+    os.environ.setdefault("BILLING_ENABLED", "false")
+    os.environ.setdefault("FEATURE_OPTIONAL_ROUTES", "true")
+    os.environ.setdefault("JWT_SECRET_KEY", "dev-jwt-secret-key")
+    os.environ.setdefault("JWT_REFRESH_SECRET_KEY", "dev-jwt-refresh-secret-key")
+    os.environ.setdefault("STRIPE_API_KEY", "sk_test_dummy")
+    os.environ.setdefault("STRIPE_WEBHOOK_SECRET", "whsec_dummy")
+    os.environ.setdefault(
+        "DATABASE_URL",
+        "postgresql+asyncpg://ledgeriq:ledgeriq_password@localhost:5432/ledgeriq",
+    )
 
 
 def _is_placeholder(value: str) -> bool:
@@ -73,65 +81,14 @@ def _is_placeholder(value: str) -> bool:
     return False
 
 
-def _resolve_env(names: list[str]) -> tuple[str | None, str | None]:
-    for name in names:
-        value = os.environ.get(name, "")
-        if value and not _is_placeholder(value):
-            return value, name
-    for name in names:
-        value = os.environ.get(name, "")
-        if value and _is_placeholder(value):
-            raise VerificationError(f"{name} is still a placeholder")
-    return None, None
-
-
-def _require_uuid(value: str, name: str) -> None:
+def _require_tenant_id() -> UUID:
+    raw = os.environ.get("AI_TEST_TENANT_ID", "")
+    if _is_placeholder(raw):
+        raise VerificationError("AI_TEST_TENANT_ID is required and must be a valid UUID")
     try:
-        UUID(value)
+        return UUID(raw)
     except Exception as exc:
-        raise VerificationError(f"{name} must be a valid UUID") from exc
-
-
-def _ensure_pkg(name: str, path: Path) -> None:
-    if name in sys.modules:
-        return
-    module = types.ModuleType(name)
-    module.__path__ = [str(path)]
-    module.__package__ = name
-    sys.modules[name] = module
-
-
-def _load_module(module_name: str, file_path: Path):
-    spec = importlib.util.spec_from_file_location(module_name, file_path)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"Unable to load module {module_name} from {file_path}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = module
-    spec.loader.exec_module(module)
-    return module
-
-
-def _load_schemas(repo_root: Path):
-    backend_root = repo_root / "backend"
-    app_path = backend_root / "app"
-    schemas_path = app_path / "schemas"
-    common_path = schemas_path / "common.py"
-    insights_path = schemas_path / "ai_insights_v1.py"
-
-    if not insights_path.exists():
-        raise VerificationError(f"Missing schema file: {insights_path}")
-
-    _ensure_pkg("app", app_path)
-    _ensure_pkg("app.schemas", schemas_path)
-    _load_module("app.schemas.common", common_path)
-    module = _load_module("app.schemas.ai_insights_v1", insights_path)
-
-    return (
-        module.ExplainabilityBlock,
-        module.ForecastBlock,
-        module.InsightsBlock,
-        module.RiskBlock,
-    )
+        raise VerificationError("AI_TEST_TENANT_ID must be a valid UUID") from exc
 
 
 def _load_payload(data: Any) -> dict:
@@ -140,6 +97,26 @@ def _load_payload(data: Any) -> dict:
     if isinstance(data, dict):
         return data
     raise VerificationError("Payload must be a JSON object")
+
+
+BACKEND_ROOT = Path(__file__).resolve().parent / "backend"
+if str(BACKEND_ROOT) not in sys.path:
+    sys.path.insert(0, str(BACKEND_ROOT))
+
+_prepare_environment()
+
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker  # noqa: E402
+
+from app.database import engine  # noqa: E402
+from app.schemas.ai_insights_v1 import (  # noqa: E402
+    ExplainabilityBlock,
+    ForecastBlock,
+    InsightsBlock,
+    RiskBlock,
+)
+from app.schemas.ai_runs_v1 import AiRunCreateRequest, AiRunMetaV1  # noqa: E402
+from app.services import ai_insights_v1_service, ai_runs_service  # noqa: E402
+from app.utils.ai_hashing import canonical_sha256  # noqa: E402
 
 
 def _validate_block(name: str, value: Any, schema_cls, errors: list[str]) -> None:
@@ -154,19 +131,17 @@ def _validate_block(name: str, value: Any, schema_cls, errors: list[str]) -> Non
         errors.append(f"{name}: {exc}")
 
 
-def _validate_payload(payload: dict, schemas: tuple) -> None:
-    explainability_cls, forecast_cls, insights_cls, risk_cls = schemas
+def _validate_payload(payload: dict) -> None:
     errors: list[str] = []
-    _validate_block("forecast", payload.get("forecast"), forecast_cls, errors)
-    _validate_block("risk", payload.get("risk"), risk_cls, errors)
-    _validate_block("explainability", payload.get("explainability"), explainability_cls, errors)
-    _validate_block("insights", payload.get("insights"), insights_cls, errors)
+    _validate_block("forecast", payload.get("forecast"), ForecastBlock, errors)
+    _validate_block("risk", payload.get("risk"), RiskBlock, errors)
+    _validate_block("explainability", payload.get("explainability"), ExplainabilityBlock, errors)
+    _validate_block("insights", payload.get("insights"), InsightsBlock, errors)
     if errors:
         raise VerificationError("Invalid payload: " + "; ".join(errors))
 
 
 async def run() -> None:
-    _prepare_environment()
     repo_root = Path(__file__).resolve().parent
     payload_path = repo_root / "notebooks" / "output" / "ai_run_payload_baseline.json"
     if not payload_path.exists():
@@ -174,69 +149,60 @@ async def run() -> None:
 
     data = json.loads(payload_path.read_text(encoding="utf-8"))
     payload = _load_payload(data)
+    _validate_payload(payload)
 
-    schemas = _load_schemas(repo_root)
-    _validate_payload(payload, schemas)
+    tenant_id = _require_tenant_id()
 
-    base_url = (
-        os.environ.get("AI_BASE_URL")
-        or os.environ.get("BASE_URL")
-        or os.environ.get("AI_TEST_BASE_URL")
-        or "http://127.0.0.1:8000"
-    ).rstrip("/")
-    token, _ = _resolve_env(["AI_TEST_JWT", "TEST_JWT", "JWT"])
-    tenant_id, tenant_name = _resolve_env(["AI_TEST_TENANT_ID"])
-    missing: list[str] = []
-    if not token:
-        missing.append("AI_TEST_JWT (or TEST_JWT/JWT)")
-    if not tenant_id:
-        missing.append("AI_TEST_TENANT_ID")
-    if missing:
-        raise VerificationError("Missing required env vars: " + ", ".join(missing))
-    _require_uuid(tenant_id, tenant_name or "AI_TEST_TENANT_ID")
+    run_meta_data = dict(data.get("run_meta") or {})
+    run_meta_data.setdefault("model_name", "colab-insights")
+    run_meta_data.setdefault("model_version", "v1")
+    run_meta_data.setdefault("dataset_fingerprint", data.get("payload_hash") or "external")
+    run_meta_data.setdefault("created_at", datetime.now(UTC).isoformat())
+    run_meta_data.setdefault("scenario", "baseline")
+    run_meta_data["created_by"] = "verifier"
 
-    run_meta = data.get("run_meta") or {
-        "model_name": "colab-insights",
-        "model_version": "v1",
-        "dataset_fingerprint": data.get("payload_hash") or "external",
-        "created_at": datetime.now(UTC).isoformat(),
-        "scenario": "baseline",
-    }
-    body = {
-        "schema_version": data.get("schema_version") or "1.0",
-        "run_meta": run_meta,
-        "payload": payload,
-        "signature": data.get("signature"),
-    }
+    req = AiRunCreateRequest(
+        schema_version=data.get("schema_version") or "1.0",
+        run_meta=AiRunMetaV1(**run_meta_data),
+        payload=payload,
+        signature=data.get("signature"),
+    )
 
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "X-Tenant-Id": tenant_id,
-    }
-
-    async with httpx.AsyncClient(base_url=base_url, timeout=30) as client:
-        resp = await client.post("/api/v1/ai/runs", headers=headers, json=body)
-        if resp.status_code != 201:
-            raise VerificationError(f"POST /ai/runs failed: {resp.status_code} {resp.text}")
-        created = resp.json()
-        if created.get("status") != "approved":
+    session_maker = async_sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
+    async with session_maker() as session:
+        run = await ai_runs_service.create_run(db=session, client_id=tenant_id, req=req)
+        if run.status != "approved":
             raise VerificationError("AI run status is not approved")
+        if run.client_id != tenant_id:
+            raise VerificationError("AI run tenant_id mismatch")
+        if run.schema_version != "1.0":
+            raise VerificationError("AI run schema_version mismatch")
+        if not run.created_at:
+            raise VerificationError("AI run created_at missing")
+        if not run.payload_hash or len(run.payload_hash) != 64:
+            raise VerificationError("AI run payload_hash invalid")
+        expected_hash = canonical_sha256(payload)
+        if run.payload_hash != expected_hash:
+            raise VerificationError("AI run payload_hash mismatch")
+        if run.payload_json != payload:
+            raise VerificationError("AI run payload_json mismatch")
 
-        insights_resp = await client.get(
-            "/api/v1/ai/insights-v1",
-            headers=headers,
-            params={"scenario": run_meta.get("scenario") or "baseline"},
+        fetched = await ai_runs_service.get_run(db=session, client_id=tenant_id, run_id=run.id)
+        if fetched.id != run.id:
+            raise VerificationError("AI run fetch mismatch")
+
+        insights = await ai_insights_v1_service.get_insights(
+            db=session,
+            client_id=tenant_id,
+            scenario=req.run_meta.scenario,
         )
-        if insights_resp.status_code != 200:
-            raise VerificationError(
-                f"GET /ai/insights-v1 failed: {insights_resp.status_code} {insights_resp.text}"
-            )
-        insights = insights_resp.json()
-        if not insights.get("run"):
-            raise VerificationError("Insights response missing run metadata")
+        if not insights:
+            raise VerificationError("Insights not returned for new run")
+        if insights.run.id != run.id:
+            raise VerificationError("Insights did not select the latest run")
         for key in ("forecast", "risk", "explainability", "insights"):
-            if not insights.get(key):
-                raise VerificationError(f"Insights response missing block: {key}")
+            if getattr(insights, key) is None:
+                raise VerificationError(f"Insights missing block: {key}")
 
     print("OK")
 

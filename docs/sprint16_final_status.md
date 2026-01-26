@@ -3,7 +3,10 @@
 ## What was fixed
 - Added a production-grade PowerShell remediation script to grant missing Postgres privileges to the `ledgeriq` role.
 - Added a verifier that confirms Alembic migrations can run and basic SELECTs succeed.
-- Added an end-to-end AI ingestion verifier that posts a run and fetches insights.
+- Added a service-level AI ingestion verifier (no HTTP required).
+
+## Sprint 16 scope note
+Sprint 16 validates AI ingest at the **service layer**. HTTP exposure of AI endpoints is intentionally deferred to a later sprint.
 
 ## How to run
 
@@ -20,24 +23,7 @@ Notes:
 - The script auto-detects the admin role from `POSTGRES_USER` inside the container, then falls back to common candidates (`postgres`, `root`, `admin`, `ledgeriq`, `ledgeriqlocal`).
 - The script prefers the DB name from `DATABASE_URL` and warns if it differs from container `POSTGRES_DB`.
 
-2) Get a JWT for API calls
-
-Windows (PowerShell, dot-sourced so the token is set in your shell):
-```
-. .\scripts\get_test_jwt.ps1 -BaseUrl http://127.0.0.1:8000 -Email owner@example.com -Password "Secret123!" -Tenant local-tenant
-```
-
-macOS/Linux (bash, sourced):
-```
-source scripts/get_test_jwt.sh --base-url http://127.0.0.1:8000 --email owner@example.com --password "Secret123!" --tenant local-tenant
-```
-
-The script reads:
-- `AI_BASE_URL` or `BASE_URL` (fallback `AI_TEST_BASE_URL`, default `http://127.0.0.1:8000`)
-- `LOGIN_EMAIL`/`LOGIN_PASSWORD` or `LEDGERIQ_ADMIN_EMAIL`/`LEDGERIQ_ADMIN_PASSWORD`
-- `LOGIN_TENANT` or `TENANT_ID` or `TENANT_SLUG`
-It also sets `AI_TEST_TENANT_ID` automatically if the login response includes `tenant.id`.
-
+2) Ensure a tenant exists (if needed)
 If you have no tenant/user yet, create one (from README):
 ```
 cd backend
@@ -78,10 +64,9 @@ Expected output:
 OK
 ```
 
-5) Verify AI ingestion and insights retrieval
+5) Verify AI ingestion and insights retrieval (service-level, no server required)
 Requirements:
-- `AI_TEST_JWT` and `AI_TEST_TENANT_ID` set in your environment.
-- API running at `AI_BASE_URL` or `BASE_URL` (default `http://127.0.0.1:8000`).
+- `AI_TEST_TENANT_ID` set in your environment.
 
 Command:
 ```
@@ -93,20 +78,8 @@ OK
 ```
 
 ## Troubleshooting
-- 401/403: verify login credentials and tenant slug/id, then re-run `get_test_jwt`.
 - 404 from `/api/v1/dev/tenants`: dev endpoints disabled; use the Postgres query option.
-- Connection refused: confirm backend is running and `AI_BASE_URL`/`BASE_URL` is correct.
-- Tenant mismatch: ensure `AI_TEST_TENANT_ID` matches the tenant used during login.
-
-## CSRF-mode environments
-If `/api/v1/auth/login` returns `csrf_failed`, use the local CLI:
-
-```
-cd backend
-python -m app.management.issue_test_jwt --tenant-id <tenant-uuid> --email <user-email>
-```
-
-Re-run the helper scripts or set `AI_TEST_JWT`/`AI_TEST_TENANT_ID` from the printed export lines.
+- Tenant mismatch: ensure `AI_TEST_TENANT_ID` is set to the correct tenant UUID.
 
 ## Final verdict criteria
 Sprint 16 is unblocked when all three steps complete successfully and the verifiers print `OK`.
