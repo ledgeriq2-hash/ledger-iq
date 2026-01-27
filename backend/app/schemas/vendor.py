@@ -12,9 +12,15 @@ from app.schemas.common import BaseSchema, IDTimestampMixin
 class VendorBase(BaseSchema):
     model_config = {"from_attributes": True, "populate_by_name": True}
 
-    code: str
+    code: str | None = None
     name: str
     status: VendorStatus = VendorStatus.ACTIVE
+    email: str | None = None
+    phone: str | None = None
+    address_line1: str | None = None
+    address_line2: str | None = None
+    city: str | None = None
+    country: str | None = None
     currency_code: str | None = None
     payment_terms_days: int | None = None
     notes: str | None = None
@@ -31,8 +37,10 @@ class VendorBase(BaseSchema):
 
     @field_validator("code")
     @classmethod
-    def code_not_blank(cls, value: str) -> str:
-        cleaned = (value or "").strip()
+    def code_not_blank(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        cleaned = value.strip()
         if not cleaned:
             raise ValueError("code must not be blank")
         return cleaned
@@ -56,6 +64,12 @@ class VendorUpdate(BaseSchema):
     code: str | None = None
     name: str | None = None
     status: VendorStatus | None = None
+    email: str | None = None
+    phone: str | None = None
+    address_line1: str | None = None
+    address_line2: str | None = None
+    city: str | None = None
+    country: str | None = None
     currency_code: str | None = None
     payment_terms_days: int | None = None
     notes: str | None = None
@@ -101,6 +115,18 @@ class VendorListOut(PaginatedResponse[VendorOut]):
     pass
 
 
+class VendorStatusUpdate(BaseSchema):
+    status: str
+
+    @field_validator("status")
+    @classmethod
+    def normalize_status(cls, value: str) -> str:
+        cleaned = (value or "").strip().lower()
+        if cleaned not in {"active", "inactive"}:
+            raise ValueError("status must be active or inactive")
+        return cleaned
+
+
 __all__ = [
     "VendorBase",
     "VendorCreate",
@@ -108,4 +134,5 @@ __all__ = [
     "VendorOut",
     "VendorListOut",
     "VendorStatus",
+    "VendorStatusUpdate",
 ]

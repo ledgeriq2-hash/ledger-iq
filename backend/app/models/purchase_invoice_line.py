@@ -51,11 +51,21 @@ class PurchaseInvoiceLine(BaseModel):
     product: Mapped["Product | None"] = relationship("Product", lazy="joined")
     unit: Mapped["Unit | None"] = relationship("Unit", lazy="joined")
 
+    @property
+    def line_total(self) -> Decimal:
+        return self.amount
+
     __table_args__ = (
-        UniqueConstraint("invoice_id", "line_no", name="uq_purchase_invoice_lines_invoice_line"),
+        UniqueConstraint(
+            "tenant_id",
+            "invoice_id",
+            "line_no",
+            name="uq_purchase_invoice_lines_tenant_invoice_line_no",
+        ),
         Index("ix_purchase_invoice_lines_tenant_id", "tenant_id"),
         Index("ix_purchase_invoice_lines_created_at", "created_at"),
         Index("ix_purchase_invoice_lines_invoice_id", "invoice_id"),
+        Index("ix_purchase_invoice_lines_tenant_invoice", "tenant_id", "invoice_id"),
         Index("ix_purchase_invoice_lines_expense_account_id", "expense_account_id"),
         Index("ix_purchase_invoice_lines_product_id", "product_id"),
     )

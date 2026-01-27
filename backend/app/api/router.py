@@ -29,6 +29,7 @@ from app.api.v1.products import router as products_router
 from app.api.v1.stock import router as stock_router
 from app.api.v1.unit_conversions import router as unit_conversions_router
 from app.api.v1.units import router as units_router
+from app.api.v1.purchase_bills import router as purchase_bills_router
 from app.api.v1.purchase_invoices import router as purchase_invoices_router
 from app.api.v1.roles import router as roles_router
 from app.api.v1.sales_invoices import router as sales_invoices_router
@@ -48,6 +49,7 @@ _include(journals_router, prefix="/v1", tags=["journals"])
 _include(journal_lines_router, prefix="/v1", tags=["journal_lines"])
 _include(notifications_router, prefix="/v1", tags=["notifications"])
 _include(products_router, prefix="/v1", tags=["products"])
+_include(purchase_bills_router, prefix="/v1", tags=["purchase_bills"])
 _include(purchase_invoices_router, prefix="/v1", tags=["purchase_invoices"])
 _include(roles_router, prefix="/v1", tags=["roles"])
 _include(sales_invoices_router, prefix="/v1", tags=["sales_invoices"])
