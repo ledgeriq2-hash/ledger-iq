@@ -4,7 +4,7 @@ import uuid
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, Index, Integer, Numeric, Text, text
+from sqlalchemy import ForeignKey, Index, Integer, Numeric, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -51,10 +51,16 @@ class SalesInvoiceLine(BaseModel):
     product: Mapped["Product | None"] = relationship("Product", lazy="joined")
     unit: Mapped["Unit | None"] = relationship("Unit", lazy="joined")
 
+    @property
+    def line_total(self) -> Decimal:
+        return self.amount
+
     __table_args__ = (
+        UniqueConstraint("tenant_id", "invoice_id", "line_no", name="uq_sales_invoice_lines_tenant_invoice_line_no"),
         Index("ix_sales_invoice_lines_tenant_id", "tenant_id"),
         Index("ix_sales_invoice_lines_created_at", "created_at"),
         Index("ix_sales_invoice_lines_invoice_id", "invoice_id"),
+        Index("ix_sales_invoice_lines_tenant_invoice", "tenant_id", "invoice_id"),
         Index("ix_sales_invoice_lines_revenue_account_id", "revenue_account_id"),
         Index("ix_sales_invoice_lines_product_id", "product_id"),
     )

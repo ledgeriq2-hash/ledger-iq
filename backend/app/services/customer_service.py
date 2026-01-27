@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from typing import Any, Sequence
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -74,6 +74,10 @@ def _audit_payload(customer: Customer) -> dict[str, Any]:
         "name": customer.name,
         "email": customer.email,
         "phone": customer.phone,
+        "address_line1": customer.address_line1,
+        "address_line2": customer.address_line2,
+        "city": customer.city,
+        "country": customer.country,
         "tax_id": customer.tax_id,
         "currency_code": customer.currency_code,
         "payment_terms_days": customer.payment_terms_days,
@@ -82,6 +86,44 @@ def _audit_payload(customer: Customer) -> dict[str, Any]:
         "status": _audit_value(customer.status),
         "deleted_at": _audit_value(customer.deleted_at),
     }
+
+
+async def _next_customer_code(session: AsyncSession, tenant_id: UUID) -> str:
+    prefix = "CUST-"
+    pattern = f"^{prefix}\\d{{6}}$"
+    result = await session.execute(
+        select(func.max(Customer.code)).where(
+            Customer.tenant_id == tenant_id,
+            Customer.code.op("~")(pattern),
+        )
+    )
+    max_code = result.scalar_one_or_none()
+    next_value = 1
+    if max_code:
+        try:
+            next_value = int(str(max_code).replace(prefix, "")) + 1
+        except ValueError:
+            next_value = 1
+    return f"{prefix}{next_value:06d}"
+
+
+async def _ensure_customer_code(session: AsyncSession, tenant_id: UUID, code: str | None) -> str:
+    cleaned = (code or "").strip()
+    if cleaned:
+        return cleaned
+    for _ in range(5):
+        candidate = await _next_customer_code(session, tenant_id)
+        existing = await session.execute(
+            select(Customer.id).where(Customer.tenant_id == tenant_id, Customer.code == candidate)
+        )
+        if existing.scalar_one_or_none():
+            continue
+        return candidate
+    raise AppException(
+        code="customer_code_conflict",
+        message="Unable to generate unique customer code",
+        http_status=409,
+    )
 
 
 async def create_customer(
@@ -112,14 +154,9 @@ async def create_customer(
             )
         data["status"] = status
     data.pop("deleted_at", None)
-    code = (data.get("code") or "").strip()
+    provided_code = bool((data.get("code") or "").strip())
+    code = await _ensure_customer_code(session, tenant_id, data.get("code"))
     name = (data.get("name") or "").strip()
-    if not code:
-        raise AppException(
-            code="customer_code_required",
-            message="Customer code is required",
-            http_status=422,
-        )
     if not name:
         raise AppException(
             code="customer_name_required",
@@ -128,43 +165,55 @@ async def create_customer(
         )
     data["code"] = code
     data["name"] = name
-    existing = await session.execute(
-        select(Customer.id).where(Customer.tenant_id == tenant_id, Customer.code == data.get("code"))
+    for attempt in range(5):
+        existing = await session.execute(
+            select(Customer.id).where(Customer.tenant_id == tenant_id, Customer.code == data.get("code"))
+        )
+        if existing.scalar_one_or_none():
+            if provided_code:
+                raise AppException(
+                    code="customer_code_exists",
+                    message="Customer code already exists",
+                    http_status=409,
+                )
+            data["code"] = await _ensure_customer_code(session, tenant_id, None)
+            continue
+        customer = Customer(**data, tenant_id=tenant_id)
+        session.add(customer)
+        try:
+            await session.flush()
+            await usage_service.record_customer_created(session, tenant_id, commit=False)
+            await audit_log_service.record_audit_log(
+                session,
+                tenant_id,
+                "customers",
+                str(customer.id),
+                "CUSTOMER.CREATE",
+                user_id=actor_id,
+                new_data=_audit_payload(customer),
+                commit=False,
+            )
+            await session.commit()
+            await session.refresh(customer)
+            return customer
+        except IntegrityError as exc:
+            await session.rollback()
+            message = str(getattr(exc, "orig", exc))
+            if "uq_customers_tenant_code" in message or "customers_tenant_id_code" in message:
+                if provided_code:
+                    raise AppException(
+                        code="customer_code_exists",
+                        message="Customer code already exists",
+                        http_status=409,
+                    ) from exc
+                data["code"] = await _ensure_customer_code(session, tenant_id, None)
+                continue
+            raise
+    raise AppException(
+        code="customer_code_conflict",
+        message="Unable to generate unique customer code",
+        http_status=409,
     )
-    if existing.scalar_one_or_none():
-        raise AppException(
-            code="customer_code_exists",
-            message="Customer code already exists",
-            http_status=409,
-        )
-    customer = Customer(**data, tenant_id=tenant_id)
-    session.add(customer)
-    try:
-        await session.flush()
-        await usage_service.record_customer_created(session, tenant_id, commit=False)
-        await audit_log_service.record_audit_log(
-            session,
-            tenant_id,
-            "customers",
-            str(customer.id),
-            "CUSTOMER.CREATE",
-            user_id=actor_id,
-            new_data=_audit_payload(customer),
-            commit=False,
-        )
-        await session.commit()
-    except IntegrityError as exc:
-        await session.rollback()
-        message = str(getattr(exc, "orig", exc))
-        if "uq_customers_tenant_code" in message or "customers_tenant_id_code" in message:
-            raise AppException(
-                code="customer_code_exists",
-                message="Customer code already exists",
-                http_status=409,
-            ) from exc
-        raise
-    await session.refresh(customer)
-    return customer
 
 
 async def update_customer(
@@ -192,6 +241,10 @@ async def update_customer(
         "name",
         "email",
         "phone",
+        "address_line1",
+        "address_line2",
+        "city",
+        "country",
         "tax_id",
         "currency_code",
         "payment_terms_days",
@@ -310,6 +363,21 @@ async def deactivate_customer(
     return customer
 
 
+async def set_customer_status(
+    session: AsyncSession,
+    tenant_id: UUID,
+    customer_id: UUID,
+    *,
+    status: CustomerStatus,
+    actor_id: UUID | None = None,
+) -> Customer | None:
+    if status == CustomerStatus.ACTIVE:
+        return await reactivate_customer(session, tenant_id, customer_id, actor_id=actor_id)
+    if status == CustomerStatus.INACTIVE:
+        return await deactivate_customer(session, tenant_id, customer_id, actor_id=actor_id)
+    raise AppException(code="customer_status_invalid", message="Customer status is invalid", http_status=422)
+
+
 async def reactivate_customer(
     session: AsyncSession,
     tenant_id: UUID,
@@ -400,6 +468,7 @@ __all__ = [
     "update_customer",
     "deactivate_customer",
     "reactivate_customer",
+    "set_customer_status",
     "delete_customer",
     "get_customer_with_open_invoices",
 ]

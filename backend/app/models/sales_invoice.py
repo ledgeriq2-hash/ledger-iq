@@ -32,17 +32,31 @@ class SalesInvoice(BaseModel):
         ForeignKey("customers.id", ondelete="RESTRICT"),
         nullable=False,
     )
-    invoice_no: Mapped[str] = mapped_column(String(50), nullable=False)
+    invoice_no: Mapped[str | None] = mapped_column(String(50), nullable=True)
     invoice_date: Mapped[date] = mapped_column(Date, nullable=False)
+    due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     currency_code: Mapped[str | None] = mapped_column(String(10), nullable=True)
     status: Mapped[SalesInvoiceStatus] = mapped_column(
         SqlEnum(SalesInvoiceStatus, name="sales_invoice_status"),
         nullable=False,
         server_default=SalesInvoiceStatus.DRAFT.value,
     )
+    subtotal: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False, server_default=text("0"))
+    total: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False, server_default=text("0"))
     total_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False, server_default=text("0"))
+    memo: Mapped[str | None] = mapped_column(String(255), nullable=True)
     posted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     reversed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    posting_journal_entry_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("journal_entries.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    reversal_journal_entry_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("journal_entries.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     customer: Mapped[Customer] = relationship("Customer", lazy="joined")
     lines: Mapped[list["SalesInvoiceLine"]] = relationship(
@@ -58,6 +72,8 @@ class SalesInvoice(BaseModel):
         Index("ix_sales_invoices_customer_id", "customer_id"),
         Index("ix_sales_invoices_invoice_date", "invoice_date"),
         Index("ix_sales_invoices_status", "status"),
+        Index("ix_sales_invoices_tenant_customer", "tenant_id", "customer_id"),
+        Index("ix_sales_invoices_tenant_status", "tenant_id", "status"),
     )
 
 

@@ -14,10 +14,14 @@ from app.schemas.common import BaseSchema, IDTimestampMixin
 class CustomerBase(BaseSchema):
     model_config = {"from_attributes": True, "populate_by_name": True}
 
-    code: str
+    code: str | None = None
     name: str
     email: str | None = None
     phone: str | None = None
+    address_line1: str | None = None
+    address_line2: str | None = None
+    city: str | None = None
+    country: str | None = None
     tax_id: str | None = None
     currency_code: str | None = None
     payment_terms_days: int | None = None
@@ -35,8 +39,10 @@ class CustomerBase(BaseSchema):
 
     @field_validator("code")
     @classmethod
-    def code_not_blank(cls, v: str) -> str:
-        value = (v or "").strip()
+    def code_not_blank(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        value = v.strip()
         if not value:
             raise ValueError("code must not be blank")
         return value
@@ -61,6 +67,10 @@ class CustomerUpdate(BaseSchema):
     name: str | None = None
     email: str | None = None
     phone: str | None = None
+    address_line1: str | None = None
+    address_line2: str | None = None
+    city: str | None = None
+    country: str | None = None
     tax_id: str | None = None
     currency_code: str | None = None
     payment_terms_days: int | None = None
@@ -121,6 +131,18 @@ class CustomerListOut(PaginatedResponse[CustomerOut]):
     pass
 
 
+class CustomerStatusUpdate(BaseSchema):
+    status: str
+
+    @field_validator("status")
+    @classmethod
+    def normalize_status(cls, value: str) -> str:
+        cleaned = (value or "").strip().lower()
+        if cleaned not in {"active", "inactive"}:
+            raise ValueError("status must be active or inactive")
+        return cleaned
+
+
 __all__ = [
     "CustomerBase",
     "CustomerCreate",
@@ -130,4 +152,5 @@ __all__ = [
     "CustomerStatus",
     "CustomerStatusFilter",
     "CustomerListOut",
+    "CustomerStatusUpdate",
 ]

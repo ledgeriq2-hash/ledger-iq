@@ -9,7 +9,17 @@ from app.api import deps
 from app.core.pagination import MAX_PAGE_SIZE, PaginationParams, pagination_params
 from app.core.permissions import ACCOUNTANT, ADMIN, OWNER, VIEWER, require_roles
 from app.models.user import User
-from app.schemas.customer import CustomerCreate, CustomerListOut, CustomerOut, CustomerStatusFilter, CustomerUpdate
+from app.models.customer import CustomerStatus
+from app.schemas.customer import (
+    CustomerCreate,
+    CustomerListOut,
+    CustomerOut,
+    CustomerStatusFilter,
+    CustomerStatusUpdate,
+    CustomerUpdate,
+)
+from app.schemas.sales_invoice import SalesInvoiceCreateDraft, SalesInvoiceListOut, SalesInvoiceRead, SalesInvoiceStatus
+from app.services import sales_invoice_service
 from app.services import customer_service
 
 router = APIRouter(prefix="/customers")
@@ -126,6 +136,30 @@ async def reactivate_customer(
     return customer
 
 
+@router.post("/{customer_id}/status", response_model=CustomerOut)
+async def set_customer_status(
+    customer_id: UUID,
+    payload: CustomerStatusUpdate,
+    request: Request,
+    session: AsyncSession = Depends(deps.get_db),
+    tenant_id: UUID = Depends(deps.get_current_tenant),
+    _: User = Depends(deps.get_current_active_user),
+    __: User = Depends(require_roles([OWNER, ADMIN, ACCOUNTANT])),
+):
+    actor_id = getattr(request.state, "user_id", None)
+    status_value = CustomerStatus.ACTIVE if payload.status == "active" else CustomerStatus.INACTIVE
+    customer = await customer_service.set_customer_status(
+        session,
+        tenant_id,
+        customer_id,
+        status=status_value,
+        actor_id=actor_id,
+    )
+    if not customer:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
+    return customer
+
+
 @router.delete("/{customer_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_customer(
     customer_id: UUID,
@@ -140,6 +174,43 @@ async def delete_customer(
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Customer not found")
     return None
+
+
+@router.get("/{customer_id}/sales-invoices", response_model=SalesInvoiceListOut)
+async def list_customer_sales_invoices(
+    customer_id: UUID,
+    status_filter: SalesInvoiceStatus | None = Query(default=None, alias="status"),
+    session: AsyncSession = Depends(deps.get_db),
+    tenant_id: UUID = Depends(deps.get_current_tenant),
+    _: User = Depends(deps.get_current_active_user),
+    __: User = Depends(require_roles([OWNER, ADMIN, ACCOUNTANT, VIEWER])),
+    pagination: PaginationParams = Depends(pagination_params),
+):
+    invoices, total = await sales_invoice_service.list_sales_invoices(
+        session,
+        tenant_id,
+        page=pagination.page,
+        page_size=pagination.page_size,
+        customer_id=customer_id,
+        status=status_filter,
+        date_from=None,
+        date_to=None,
+    )
+    return SalesInvoiceListOut.from_results(items=invoices, total=total, params=pagination)
+
+
+@router.post("/{customer_id}/sales-invoices", response_model=SalesInvoiceRead, status_code=status.HTTP_201_CREATED)
+async def create_customer_sales_invoice(
+    customer_id: UUID,
+    payload: SalesInvoiceCreateDraft,
+    session: AsyncSession = Depends(deps.get_db),
+    tenant_id: UUID = Depends(deps.get_current_tenant),
+    _: User = Depends(deps.get_current_active_user),
+    __: User = Depends(require_roles([OWNER, ADMIN, ACCOUNTANT])),
+):
+    data = payload.model_dump()
+    data["customer_id"] = customer_id
+    return await sales_invoice_service.create_sales_invoice(session, tenant_id, data)
 
 
 __all__ = ["router"]

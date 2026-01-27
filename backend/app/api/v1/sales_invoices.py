@@ -13,10 +13,15 @@ from app.models.user import User
 from app.schemas.journals import JournalEntryReverseRequest
 from app.schemas.sales_invoice import (
     SalesInvoiceCreate,
+    SalesInvoiceLineCreate,
+    SalesInvoiceLineRead,
+    SalesInvoiceLineUpdate,
     SalesInvoiceListOut,
     SalesInvoiceOut,
+    SalesInvoiceRead,
     SalesInvoiceStatus,
     SalesInvoiceUpdate,
+    SalesInvoiceUpdateDraft,
 )
 from app.services import sales_invoice_service
 
@@ -62,6 +67,59 @@ async def get_sales_invoice(
     return invoice
 
 
+@router.get("/{invoice_id}/lines", response_model=list[SalesInvoiceLineRead])
+async def list_sales_invoice_lines(
+    invoice_id: UUID,
+    session: AsyncSession = Depends(deps.get_db),
+    tenant_id: UUID = Depends(deps.get_current_tenant),
+    _: User = Depends(deps.get_current_active_user),
+    __: User = Depends(require_roles([OWNER, ADMIN, ACCOUNTANT, VIEWER])),
+):
+    return await sales_invoice_service.list_sales_invoice_lines(session, tenant_id, invoice_id)
+
+
+@router.post("/{invoice_id}/lines", response_model=SalesInvoiceLineRead, status_code=status.HTTP_201_CREATED)
+async def add_sales_invoice_line(
+    invoice_id: UUID,
+    payload: SalesInvoiceLineCreate,
+    session: AsyncSession = Depends(deps.get_db),
+    tenant_id: UUID = Depends(deps.get_current_tenant),
+    _: User = Depends(deps.get_current_active_user),
+    __: User = Depends(require_roles([OWNER, ADMIN, ACCOUNTANT])),
+):
+    return await sales_invoice_service.add_sales_invoice_line(session, tenant_id, invoice_id, payload)
+
+
+@router.put("/{invoice_id}/lines/{line_id}", response_model=SalesInvoiceLineRead)
+async def update_sales_invoice_line(
+    invoice_id: UUID,
+    line_id: UUID,
+    payload: SalesInvoiceLineUpdate,
+    session: AsyncSession = Depends(deps.get_db),
+    tenant_id: UUID = Depends(deps.get_current_tenant),
+    _: User = Depends(deps.get_current_active_user),
+    __: User = Depends(require_roles([OWNER, ADMIN, ACCOUNTANT])),
+):
+    return await sales_invoice_service.update_sales_invoice_line(
+        session, tenant_id, invoice_id, line_id, payload
+    )
+
+
+@router.delete("/{invoice_id}/lines/{line_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_sales_invoice_line(
+    invoice_id: UUID,
+    line_id: UUID,
+    session: AsyncSession = Depends(deps.get_db),
+    tenant_id: UUID = Depends(deps.get_current_tenant),
+    _: User = Depends(deps.get_current_active_user),
+    __: User = Depends(require_roles([OWNER, ADMIN, ACCOUNTANT])),
+):
+    deleted = await sales_invoice_service.delete_sales_invoice_line(session, tenant_id, invoice_id, line_id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sales invoice line not found")
+    return None
+
+
 @router.post("/", response_model=SalesInvoiceOut, status_code=status.HTTP_201_CREATED)
 async def create_sales_invoice(
     payload: SalesInvoiceCreate,
@@ -77,6 +135,21 @@ async def create_sales_invoice(
 async def update_sales_invoice(
     invoice_id: UUID,
     payload: SalesInvoiceUpdate,
+    session: AsyncSession = Depends(deps.get_db),
+    tenant_id: UUID = Depends(deps.get_current_tenant),
+    _: User = Depends(deps.get_current_active_user),
+    __: User = Depends(require_roles([OWNER, ADMIN, ACCOUNTANT])),
+):
+    invoice = await sales_invoice_service.update_sales_invoice(session, tenant_id, invoice_id, payload)
+    if not invoice:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sales invoice not found")
+    return invoice
+
+
+@router.put("/{invoice_id}", response_model=SalesInvoiceRead)
+async def update_sales_invoice_draft(
+    invoice_id: UUID,
+    payload: SalesInvoiceUpdateDraft,
     session: AsyncSession = Depends(deps.get_db),
     tenant_id: UUID = Depends(deps.get_current_tenant),
     _: User = Depends(deps.get_current_active_user),

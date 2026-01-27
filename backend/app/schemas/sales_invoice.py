@@ -75,14 +75,18 @@ class SalesInvoiceLineOut(IDTimestampMixin, SalesInvoiceLineBase):
 
 class SalesInvoiceBase(BaseSchema):
     customer_id: UUID
-    invoice_no: str
+    invoice_no: str | None = None
     invoice_date: date
+    due_date: date | None = None
     currency_code: str | None = None
+    memo: str | None = None
 
     @field_validator("invoice_no")
     @classmethod
-    def invoice_no_not_blank(cls, value: str) -> str:
-        cleaned = (value or "").strip()
+    def invoice_no_not_blank(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        cleaned = value.strip()
         if not cleaned:
             raise ValueError("invoice_no must not be blank")
         return cleaned
@@ -113,14 +117,78 @@ class SalesInvoiceUpdate(BaseSchema):
 class SalesInvoiceOut(IDTimestampMixin, SalesInvoiceBase):
     id: UUID
     status: SalesInvoiceStatus = SalesInvoiceStatus.DRAFT
+    subtotal: Decimal = Decimal("0")
+    total: Decimal = Decimal("0")
     total_amount: Decimal = Decimal("0")
     posted_at: datetime | None = None
     reversed_at: datetime | None = None
+    posting_journal_entry_id: UUID | None = None
+    reversal_journal_entry_id: UUID | None = None
     lines: list[SalesInvoiceLineOut] | None = None
 
 
 class SalesInvoiceListOut(PaginatedResponse[SalesInvoiceOut]):
     pass
+
+
+class SalesInvoiceDraftBase(BaseSchema):
+    customer_id: UUID | None = None
+    invoice_no: str | None = None
+    invoice_date: date
+    due_date: date | None = None
+    currency_code: str | None = None
+    memo: str | None = None
+
+    @field_validator("invoice_no")
+    @classmethod
+    def draft_invoice_no_not_blank(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("invoice_no must not be blank")
+        return cleaned
+
+
+class SalesInvoiceCreateDraft(SalesInvoiceDraftBase):
+    lines: list[SalesInvoiceLineCreate] = Field(..., min_length=1)
+
+
+class SalesInvoiceUpdateDraft(BaseSchema):
+    customer_id: UUID | None = None
+    invoice_no: str | None = None
+    invoice_date: date | None = None
+    due_date: date | None = None
+    currency_code: str | None = None
+    memo: str | None = None
+    lines: list[SalesInvoiceLineUpdate] | None = Field(default=None, min_length=1)
+
+    @field_validator("invoice_no")
+    @classmethod
+    def draft_update_invoice_no_not_blank(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("invoice_no must not be blank")
+        return cleaned
+
+
+class SalesInvoiceLineRead(IDTimestampMixin, SalesInvoiceLineBase):
+    id: UUID
+    line_total: Decimal | None = None
+
+
+class SalesInvoiceRead(IDTimestampMixin, SalesInvoiceDraftBase):
+    id: UUID
+    status: SalesInvoiceStatus = SalesInvoiceStatus.DRAFT
+    subtotal: Decimal = Decimal("0")
+    total: Decimal = Decimal("0")
+    posted_at: datetime | None = None
+    reversed_at: datetime | None = None
+    posting_journal_entry_id: UUID | None = None
+    reversal_journal_entry_id: UUID | None = None
+    lines: list[SalesInvoiceLineRead] | None = None
 
 
 __all__ = [
@@ -133,5 +201,9 @@ __all__ = [
     "SalesInvoiceUpdate",
     "SalesInvoiceOut",
     "SalesInvoiceListOut",
+    "SalesInvoiceCreateDraft",
+    "SalesInvoiceUpdateDraft",
+    "SalesInvoiceRead",
+    "SalesInvoiceLineRead",
     "SalesInvoiceStatus",
 ]
