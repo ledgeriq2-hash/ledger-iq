@@ -262,6 +262,12 @@ async def post_cash_transaction(
             message="Reversed cash transactions cannot be posted",
             http_status=409,
         )
+    if tx.journal_entry_id:
+        raise AppException(
+            code="cash_transaction_already_posted",
+            message="Cash transaction has already been posted",
+            http_status=409,
+        )
 
     if not tx.posting_date:
         raise AppException(
@@ -368,9 +374,29 @@ async def post_cash_transaction(
         )
 
     async with _transaction_scope(session):
-        tx = await repo.get(tenant_id=tenant_id, transaction_id=tx_id)
+        result = await session.execute(
+            select(TreasuryCashTransaction)
+            .where(
+                TreasuryCashTransaction.id == tx_id,
+                TreasuryCashTransaction.tenant_id == tenant_id,
+            )
+            .with_for_update()
+        )
+        tx = result.scalar_one_or_none()
         if not tx:
             raise AppException(code="cash_transaction_not_found", message="Cash transaction not found", http_status=404)
+        if tx.status == CashTransactionStatus.POSTED or tx.journal_entry_id:
+            raise AppException(
+                code="cash_transaction_already_posted",
+                message="Cash transaction has already been posted",
+                http_status=409,
+            )
+        if tx.status == CashTransactionStatus.REVERSED:
+            raise AppException(
+                code="cash_transaction_already_reversed",
+                message="Reversed cash transactions cannot be posted",
+                http_status=409,
+            )
         ledger = LedgerService(session=session, tenant_id=tenant_id, actor_id=actor_id)
         entry = await ledger.create_manual_entry(
             entry_date=tx.posting_date,
@@ -423,12 +449,21 @@ async def reverse_cash_transaction(
             message="Only posted cash transactions can be reversed",
             http_status=409,
         )
+    if tx.reversal_journal_entry_id:
+        raise AppException(
+            code="cash_transaction_already_reversed",
+            message="Cash transaction has already been reversed",
+            http_status=409,
+        )
     if not tx.journal_entry_id:
         raise AppException(
             code="cash_transaction_missing_journal_entry",
             message="Posted cash transaction is missing journal entry",
             http_status=409,
         )
+
+    guard = PeriodGuard(session=session)
+    await guard.assert_open(tenant_id=tenant_id, entry_date=tx.posting_date)
 
     ledger = LedgerService(session=session, tenant_id=tenant_id, actor_id=actor_id)
     reversal_entry = await ledger.reverse_entry(tx.journal_entry_id, reason=reason.strip())

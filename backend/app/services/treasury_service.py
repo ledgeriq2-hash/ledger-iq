@@ -132,7 +132,13 @@ async def _post_treasury_movement(
             message="Treasury transaction was not created",
             http_status=500,
         )
-    tx = await session.get(TreasuryTransaction, result.treasury_transaction_id)
+    tx_result = await session.execute(
+        select(TreasuryTransaction).where(
+            TreasuryTransaction.id == result.treasury_transaction_id,
+            TreasuryTransaction.tenant_id == tenant_id,
+        )
+    )
+    tx = tx_result.scalar_one_or_none()
     if not tx:
         raise AppException(
             code="treasury_transaction_not_found",

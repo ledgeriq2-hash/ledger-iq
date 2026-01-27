@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import AppException
@@ -11,6 +12,17 @@ from app.core.pagination import DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE
 from app.models.ai_run import AiRun
 from app.schemas.ai_runs_v1 import AiRunCreateRequest
 from app.utils.ai_hashing import canonical_sha256
+
+AI_RUN_UNIQUE_CONSTRAINT = "ux_ai_runs_client_model_version_dataset_scenario_payload_hash"
+
+
+def _is_unique_run_violation(exc: IntegrityError) -> bool:
+    origin = getattr(exc, "orig", None)
+    constraint_name = getattr(getattr(origin, "diag", None), "constraint_name", None)
+    if constraint_name:
+        return constraint_name == AI_RUN_UNIQUE_CONSTRAINT
+    message = str(origin or exc)
+    return AI_RUN_UNIQUE_CONSTRAINT in message
 
 
 def _normalize_limit_offset(limit: int, offset: int) -> tuple[int, int]:
@@ -38,6 +50,18 @@ async def create_run(
     req: AiRunCreateRequest,
 ) -> AiRun:
     payload_hash = canonical_sha256(req.payload)
+    existing = await db.execute(
+        select(AiRun.id).where(
+            AiRun.client_id == client_id,
+            AiRun.model_name == req.run_meta.model_name,
+            AiRun.model_version == req.run_meta.model_version,
+            AiRun.dataset_fingerprint == req.run_meta.dataset_fingerprint,
+            AiRun.scenario == req.run_meta.scenario,
+            AiRun.payload_hash == payload_hash,
+        )
+    )
+    if existing.scalar_one_or_none():
+        raise AppException(code="ai_run_already_exists", message="AI run already exists", http_status=409)
     run = AiRun(
         client_id=client_id,
         schema_version=req.schema_version,
@@ -54,7 +78,13 @@ async def create_run(
         created_by=req.run_meta.created_by,
     )
     db.add(run)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError as exc:
+        await db.rollback()
+        if _is_unique_run_violation(exc):
+            raise AppException(code="ai_run_already_exists", message="AI run already exists", http_status=409) from exc
+        raise
     await db.refresh(run)
     return run
 

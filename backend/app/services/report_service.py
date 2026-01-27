@@ -592,8 +592,11 @@ async def get_general_ledger(
             http_status=422,
         )
 
-    account = await session.get(Account, account_id)
-    if not account or account.tenant_id != tenant_id:
+    result = await session.execute(
+        select(Account).where(Account.id == account_id, Account.tenant_id == tenant_id)
+    )
+    account = result.scalar_one_or_none()
+    if not account:
         raise AppException(
             code="account_not_found",
             message="Account not found",

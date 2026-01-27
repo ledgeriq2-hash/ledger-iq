@@ -59,6 +59,19 @@ class DimensionService:
         )
         return result.scalars().all()
 
+    async def _load_dimension(self, dimension_id: UUID) -> Dimension:
+        result = await self.session.execute(
+            select(Dimension).where(Dimension.id == dimension_id, Dimension.tenant_id == self.tenant_id)
+        )
+        dimension = result.scalar_one_or_none()
+        if not dimension:
+            raise AppException(
+                code="dimension_not_found",
+                message="Dimension not found",
+                http_status=404,
+            )
+        return dimension
+
     async def create_dimension(self, payload: Any) -> Dimension:
         await self._require_permission(PermissionCode.DIMENSION_MANAGE.value)
         data = _to_dict(payload)
@@ -120,13 +133,7 @@ class DimensionService:
 
     async def update_dimension(self, dimension_id: UUID, payload: Any) -> Dimension:
         await self._require_permission(PermissionCode.DIMENSION_MANAGE.value)
-        dimension = await self.session.get(Dimension, dimension_id)
-        if not dimension or dimension.tenant_id != self.tenant_id:
-            raise AppException(
-                code="dimension_not_found",
-                message="Dimension not found",
-                http_status=404,
-            )
+        dimension = await self._load_dimension(dimension_id)
 
         data = _to_dict(payload, exclude_unset=True)
         changes: dict[str, Any] = {}
@@ -188,13 +195,7 @@ class DimensionService:
 
     async def archive_dimension(self, dimension_id: UUID) -> Dimension:
         await self._require_permission(PermissionCode.DIMENSION_MANAGE.value)
-        dimension = await self.session.get(Dimension, dimension_id)
-        if not dimension or dimension.tenant_id != self.tenant_id:
-            raise AppException(
-                code="dimension_not_found",
-                message="Dimension not found",
-                http_status=404,
-            )
+        dimension = await self._load_dimension(dimension_id)
         if not dimension.is_active:
             return dimension
 

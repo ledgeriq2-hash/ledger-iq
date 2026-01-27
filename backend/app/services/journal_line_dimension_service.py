@@ -45,8 +45,11 @@ class JournalLineDimensionService:
         )
 
     async def _load_line(self, line_id: UUID) -> JournalLine:
-        line = await self.session.get(JournalLine, line_id)
-        if not line or line.tenant_id != self.tenant_id:
+        result = await self.session.execute(
+            select(JournalLine).where(JournalLine.id == line_id, JournalLine.tenant_id == self.tenant_id)
+        )
+        line = result.scalar_one_or_none()
+        if not line:
             raise AppException(
                 code="journal_line_not_found",
                 message="Journal line not found",
@@ -133,8 +136,14 @@ class JournalLineDimensionService:
                     http_status=409,
                 )
 
-            value = await self.session.get(DimensionValue, value_id)
-            if not value or value.tenant_id != self.tenant_id:
+            value_result = await self.session.execute(
+                select(DimensionValue).where(
+                    DimensionValue.id == value_id,
+                    DimensionValue.tenant_id == self.tenant_id,
+                )
+            )
+            value = value_result.scalar_one_or_none()
+            if not value:
                 raise AppException(
                     code="dimension_value_not_found",
                     message="Dimension value not found",

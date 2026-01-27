@@ -309,7 +309,13 @@ async def reverse_journal_entry(
     treasury_movement = None
     original_treasury_tx = None
     if entry.treasury_transaction_id:
-        tx = await session.get(TreasuryTransaction, entry.treasury_transaction_id)
+        tx_result = await session.execute(
+            select(TreasuryTransaction).where(
+                TreasuryTransaction.id == entry.treasury_transaction_id,
+                TreasuryTransaction.tenant_id == tenant_id,
+            )
+        )
+        tx = tx_result.scalar_one_or_none()
         if tx:
             direction = "out" if tx.direction == "in" else "in"
             party_type = None
@@ -421,7 +427,13 @@ async def void_journal_entry(
     if reason:
         entry.voided_reason = reason
     if entry.treasury_transaction_id:
-        tx = await session.get(TreasuryTransaction, entry.treasury_transaction_id)
+        tx_result = await session.execute(
+            select(TreasuryTransaction).where(
+                TreasuryTransaction.id == entry.treasury_transaction_id,
+                TreasuryTransaction.tenant_id == tenant_id,
+            )
+        )
+        tx = tx_result.scalar_one_or_none()
         if tx:
             tx.is_voided = True
             tx.voided_at = entry.voided_at

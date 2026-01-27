@@ -55,14 +55,30 @@ class DimensionValueService:
         )
 
     async def _load_dimension(self, dimension_id: UUID) -> Dimension:
-        dimension = await self.session.get(Dimension, dimension_id)
-        if not dimension or dimension.tenant_id != self.tenant_id:
+        result = await self.session.execute(
+            select(Dimension).where(Dimension.id == dimension_id, Dimension.tenant_id == self.tenant_id)
+        )
+        dimension = result.scalar_one_or_none()
+        if not dimension:
             raise AppException(
                 code="dimension_not_found",
                 message="Dimension not found",
                 http_status=404,
             )
         return dimension
+
+    async def _load_value(self, value_id: UUID) -> DimensionValue:
+        result = await self.session.execute(
+            select(DimensionValue).where(DimensionValue.id == value_id, DimensionValue.tenant_id == self.tenant_id)
+        )
+        value = result.scalar_one_or_none()
+        if not value:
+            raise AppException(
+                code="dimension_value_not_found",
+                message="Dimension value not found",
+                http_status=404,
+            )
+        return value
 
     async def list_values(self, dimension_id: UUID) -> list[DimensionValue]:
         await self._require_permission(PermissionCode.DIMENSION_VALUE_VIEW.value)
@@ -151,13 +167,7 @@ class DimensionValueService:
 
     async def update_value(self, value_id: UUID, payload: Any) -> DimensionValue:
         await self._require_permission(PermissionCode.DIMENSION_VALUE_MANAGE.value)
-        value = await self.session.get(DimensionValue, value_id)
-        if not value or value.tenant_id != self.tenant_id:
-            raise AppException(
-                code="dimension_value_not_found",
-                message="Dimension value not found",
-                http_status=404,
-            )
+        value = await self._load_value(value_id)
 
         data = _to_dict(payload, exclude_unset=True)
         changes: dict[str, Any] = {}
@@ -219,13 +229,7 @@ class DimensionValueService:
 
     async def archive_value(self, value_id: UUID) -> DimensionValue:
         await self._require_permission(PermissionCode.DIMENSION_VALUE_MANAGE.value)
-        value = await self.session.get(DimensionValue, value_id)
-        if not value or value.tenant_id != self.tenant_id:
-            raise AppException(
-                code="dimension_value_not_found",
-                message="Dimension value not found",
-                http_status=404,
-            )
+        value = await self._load_value(value_id)
         if not value.is_active:
             return value
 

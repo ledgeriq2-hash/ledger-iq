@@ -430,7 +430,11 @@ async def post_sales_invoice(
         raise AppException(code="sales_invoice_not_found", message="Sales invoice not found", http_status=404)
 
     if invoice.status == SalesInvoiceStatus.POSTED:
-        return invoice
+        raise AppException(
+            code="sales_invoice_already_posted",
+            message="Sales invoice has already been posted",
+            http_status=409,
+        )
     if invoice.status == SalesInvoiceStatus.REVERSED:
         raise AppException(
             code="sales_invoice_not_draft",
@@ -453,7 +457,11 @@ async def post_sales_invoice(
         invoice.posted_at = existing_entry.posted_at or existing_entry.posting_date or datetime.now(UTC)
         await session.commit()
         await session.refresh(invoice)
-        return invoice
+        raise AppException(
+            code="sales_invoice_already_posted",
+            message="Sales invoice has already been posted",
+            http_status=409,
+        )
 
     if not invoice.lines:
         raise AppException(
@@ -592,7 +600,11 @@ async def reverse_sales_invoice(
         raise AppException(code="sales_invoice_not_found", message="Sales invoice not found", http_status=404)
 
     if invoice.status == SalesInvoiceStatus.REVERSED:
-        return invoice
+        raise AppException(
+            code="sales_invoice_already_reversed",
+            message="Sales invoice has already been reversed",
+            http_status=409,
+        )
     if invoice.status != SalesInvoiceStatus.POSTED:
         raise AppException(
             code="sales_invoice_not_posted",
@@ -619,7 +631,11 @@ async def reverse_sales_invoice(
         invoice.reversed_at = datetime.now(UTC)
         await session.commit()
         await session.refresh(invoice)
-        return invoice
+        raise AppException(
+            code="sales_invoice_already_reversed",
+            message="Sales invoice has already been reversed",
+            http_status=409,
+        )
 
     reversal_entry = await _find_reversal_entry(session, tenant_id, entry_id)
     if reversal_entry:
@@ -627,7 +643,11 @@ async def reverse_sales_invoice(
         invoice.reversed_at = reversal_entry.posted_at or reversal_entry.posting_date or datetime.now(UTC)
         await session.commit()
         await session.refresh(invoice)
-        return invoice
+        raise AppException(
+            code="sales_invoice_already_reversed",
+            message="Sales invoice has already been reversed",
+            http_status=409,
+        )
 
     stock_moves = await _find_stock_moves(session, tenant_id, invoice_id, "sales_invoice")
     reversal_moves = await _find_stock_moves(session, tenant_id, invoice_id, "sales_invoice_reverse")
