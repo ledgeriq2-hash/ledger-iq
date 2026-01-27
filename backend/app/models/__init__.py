@@ -13,6 +13,8 @@ from app.models.billing_plan import BillingPlan
 from app.models.cashflow_category import CashflowCategory
 from app.models.chart_of_account import ChartOfAccount
 from app.models.customer import Customer
+from app.models.customer_receipt import CustomerReceipt, CustomerReceiptStatus
+from app.models.customer_receipt_allocation import CustomerReceiptAllocation
 from app.models.data_snapshot import DataSnapshot
 from app.models.dimension import Dimension
 from app.models.dimension_value import DimensionValue
@@ -60,6 +62,8 @@ from app.models.unit import Unit
 from app.models.unit_conversion import UnitConversion
 from app.models.user import User
 from app.models.vendor import Vendor, VendorStatus
+from app.models.vendor_payment import VendorPayment, VendorPaymentStatus
+from app.models.vendor_payment_allocation import VendorPaymentAllocation
 
 ALL_MODELS = [
     ActivityLog,
@@ -75,6 +79,9 @@ ALL_MODELS = [
     CashflowCategory,
     ChartOfAccount,
     Customer,
+    CustomerReceipt,
+    CustomerReceiptAllocation,
+    CustomerReceiptStatus,
     DataSnapshot,
     Dimension,
     DimensionValue,
@@ -120,6 +127,9 @@ ALL_MODELS = [
     UnitConversion,
     User,
     Vendor,
+    VendorPayment,
+    VendorPaymentAllocation,
+    VendorPaymentStatus,
 ]
 
 
@@ -137,6 +147,9 @@ __all__ = [
     "CashflowCategory",
     "ChartOfAccount",
     "Customer",
+    "CustomerReceipt",
+    "CustomerReceiptAllocation",
+    "CustomerReceiptStatus",
     "DataSnapshot",
     "Dimension",
     "DimensionValue",
@@ -188,5 +201,8 @@ __all__ = [
     "User",
     "Vendor",
     "VendorStatus",
+    "VendorPayment",
+    "VendorPaymentAllocation",
+    "VendorPaymentStatus",
     "ALL_MODELS",
 ]

@@ -16,6 +16,12 @@ from app.schemas.purchase_invoice import (
     PurchaseBillRead,
     PurchaseInvoiceStatus,
 )
+from app.schemas.vendor_payment import (
+    VendorPaymentCreateDraft,
+    VendorPaymentListOut,
+    VendorPaymentRead,
+    VendorPaymentStatus,
+)
 from app.schemas.vendor import (
     VendorCreate,
     VendorListOut,
@@ -24,7 +30,7 @@ from app.schemas.vendor import (
     VendorStatusUpdate,
     VendorUpdate,
 )
-from app.services import purchase_invoice_service, vendor_service
+from app.services import purchase_invoice_service, vendor_payment_service, vendor_service
 
 router = APIRouter(prefix="/vendors")
 
@@ -169,6 +175,45 @@ async def create_vendor_purchase_bill(
     data = payload.model_dump()
     data["vendor_id"] = vendor_id
     return await purchase_invoice_service.create_purchase_invoice(session, tenant_id, data)
+
+
+@router.get("/{vendor_id}/payments", response_model=VendorPaymentListOut)
+async def list_vendor_payments(
+    vendor_id: UUID,
+    status_filter: VendorPaymentStatus | None = Query(default=None, alias="status"),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    session: AsyncSession = Depends(deps.get_db),
+    tenant_id: UUID = Depends(deps.get_current_tenant),
+    _: User = Depends(deps.get_current_active_user),
+    __: User = Depends(require_roles([OWNER, ADMIN, ACCOUNTANT, VIEWER])),
+    pagination: PaginationParams = Depends(pagination_params),
+):
+    payments, total = await vendor_payment_service.list_payments(
+        session,
+        tenant_id,
+        page=pagination.page,
+        page_size=pagination.page_size,
+        vendor_id=vendor_id,
+        status=status_filter,
+        date_from=date_from,
+        date_to=date_to,
+    )
+    return VendorPaymentListOut.from_results(items=payments, total=total, params=pagination)
+
+
+@router.post("/{vendor_id}/payments", response_model=VendorPaymentRead, status_code=status.HTTP_201_CREATED)
+async def create_vendor_payment(
+    vendor_id: UUID,
+    payload: VendorPaymentCreateDraft,
+    session: AsyncSession = Depends(deps.get_db),
+    tenant_id: UUID = Depends(deps.get_current_tenant),
+    _: User = Depends(deps.get_current_active_user),
+    __: User = Depends(require_roles([OWNER, ADMIN, ACCOUNTANT])),
+):
+    data = payload.model_dump()
+    data["vendor_id"] = vendor_id
+    return await vendor_payment_service.create_payment(session, tenant_id, data)
 
 
 __all__ = ["router"]

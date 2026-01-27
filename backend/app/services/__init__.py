@@ -14,6 +14,8 @@ __all__ = [
     "role_service",
     "sales_invoice_service",
     "purchase_invoice_service",
+    "customer_receipt_service",
+    "vendor_payment_service",
     "vendor_service",
     "supplier_service",
     "tenant_service",

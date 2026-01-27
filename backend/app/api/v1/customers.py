@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
@@ -18,9 +19,14 @@ from app.schemas.customer import (
     CustomerStatusUpdate,
     CustomerUpdate,
 )
+from app.schemas.customer_receipt import (
+    CustomerReceiptCreateDraft,
+    CustomerReceiptListOut,
+    CustomerReceiptRead,
+    CustomerReceiptStatus,
+)
 from app.schemas.sales_invoice import SalesInvoiceCreateDraft, SalesInvoiceListOut, SalesInvoiceRead, SalesInvoiceStatus
-from app.services import sales_invoice_service
-from app.services import customer_service
+from app.services import customer_receipt_service, customer_service, sales_invoice_service
 
 router = APIRouter(prefix="/customers")
 
@@ -211,6 +217,45 @@ async def create_customer_sales_invoice(
     data = payload.model_dump()
     data["customer_id"] = customer_id
     return await sales_invoice_service.create_sales_invoice(session, tenant_id, data)
+
+
+@router.get("/{customer_id}/receipts", response_model=CustomerReceiptListOut)
+async def list_customer_receipts(
+    customer_id: UUID,
+    status_filter: CustomerReceiptStatus | None = Query(default=None, alias="status"),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    session: AsyncSession = Depends(deps.get_db),
+    tenant_id: UUID = Depends(deps.get_current_tenant),
+    _: User = Depends(deps.get_current_active_user),
+    __: User = Depends(require_roles([OWNER, ADMIN, ACCOUNTANT, VIEWER])),
+    pagination: PaginationParams = Depends(pagination_params),
+):
+    receipts, total = await customer_receipt_service.list_receipts(
+        session,
+        tenant_id,
+        page=pagination.page,
+        page_size=pagination.page_size,
+        customer_id=customer_id,
+        status=status_filter,
+        date_from=date_from,
+        date_to=date_to,
+    )
+    return CustomerReceiptListOut.from_results(items=receipts, total=total, params=pagination)
+
+
+@router.post("/{customer_id}/receipts", response_model=CustomerReceiptRead, status_code=status.HTTP_201_CREATED)
+async def create_customer_receipt(
+    customer_id: UUID,
+    payload: CustomerReceiptCreateDraft,
+    session: AsyncSession = Depends(deps.get_db),
+    tenant_id: UUID = Depends(deps.get_current_tenant),
+    _: User = Depends(deps.get_current_active_user),
+    __: User = Depends(require_roles([OWNER, ADMIN, ACCOUNTANT])),
+):
+    data = payload.model_dump()
+    data["customer_id"] = customer_id
+    return await customer_receipt_service.create_receipt(session, tenant_id, data)
 
 
 __all__ = ["router"]

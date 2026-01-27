@@ -31,12 +31,14 @@ from app.api.v1.unit_conversions import router as unit_conversions_router
 from app.api.v1.units import router as units_router
 from app.api.v1.purchase_bills import router as purchase_bills_router
 from app.api.v1.purchase_invoices import router as purchase_invoices_router
+from app.api.v1.receipts import router as receipts_router
 from app.api.v1.roles import router as roles_router
 from app.api.v1.sales_invoices import router as sales_invoices_router
 from app.api.v1.suppliers import router as suppliers_router
 from app.api.v1.tenants import router as tenants_router
 from app.api.v1.treasury import router as treasury_router
 from app.api.v1.treasury_cash import router as treasury_cash_router
+from app.api.v1.vendor_payments import router as vendor_payments_router
 from app.api.v1.vendors import router as vendors_router
 
 _include(accounts_router, prefix="/v1", tags=["accounts"])
@@ -51,6 +53,7 @@ _include(notifications_router, prefix="/v1", tags=["notifications"])
 _include(products_router, prefix="/v1", tags=["products"])
 _include(purchase_bills_router, prefix="/v1", tags=["purchase_bills"])
 _include(purchase_invoices_router, prefix="/v1", tags=["purchase_invoices"])
+_include(receipts_router, prefix="/v1", tags=["receipts"])
 _include(roles_router, prefix="/v1", tags=["roles"])
 _include(sales_invoices_router, prefix="/v1", tags=["sales_invoices"])
 _include(suppliers_router, prefix="/v1", tags=["suppliers"])
@@ -60,6 +63,7 @@ _include(unit_conversions_router, prefix="/v1", tags=["unit_conversions"])
 _include(stock_router, prefix="/v1", tags=["stock"])
 _include(treasury_router, prefix="/v1", tags=["treasury"])
 _include(treasury_cash_router, prefix="/v1", tags=["treasury_cash"])
+_include(vendor_payments_router, prefix="/v1", tags=["payments"])
 _include(vendors_router, prefix="/v1", tags=["vendors"])
 
 if settings.feature_optional_routes:
