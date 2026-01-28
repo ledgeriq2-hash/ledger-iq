@@ -18,13 +18,12 @@ from app.models.journal_entry import JournalEntry
 from app.models.product import Product, ProductStatus
 from app.models.purchase_invoice import PurchaseInvoice, PurchaseInvoiceStatus
 from app.models.purchase_invoice_line import PurchaseInvoiceLine
-from app.models.stock_move import StockMove, StockMoveDirection
+from app.models.stock_move import StockMoveDirection, StockMoveSourceType
 from app.models.vendor import Vendor, VendorStatus
 from app.schemas.journals import JournalLineCreate
-from app.services import settings_service, stock_service
+from app.services import settings_service, stock_ledger_service
 from app.services.ledger_service import DEFAULT_BASE_CURRENCY, LedgerService, STATUS_POSTED, STATUS_REVERSED
 from app.services.period_guard import PeriodGuard
-from app.services.unit_conversion_service import resolve_multiplier
 
 
 def _to_dict(payload: Any, *, exclude_unset: bool = False) -> dict[str, Any]:
@@ -95,7 +94,7 @@ async def _get_product(session: AsyncSession, tenant_id: UUID, product_id: UUID)
     product = result.scalar_one_or_none()
     if not product:
         raise AppException(code="product_not_found", message="Product not found", http_status=404)
-    if getattr(product, "status", None) == ProductStatus.INACTIVE:
+    if getattr(product, "status", None) == ProductStatus.INACTIVE or getattr(product, "is_active", True) is False:
         raise AppException(code="product_inactive", message="Product is inactive", http_status=409)
     return product
 
@@ -416,16 +415,11 @@ async def _find_stock_moves(
     session: AsyncSession,
     tenant_id: UUID,
     invoice_id: UUID,
-    reference_type: str,
-) -> list[StockMove]:
-    result = await session.execute(
-        select(StockMove).where(
-            StockMove.tenant_id == tenant_id,
-            StockMove.reference_type == reference_type,
-            StockMove.reference_id == invoice_id,
-        )
+    source_type: StockMoveSourceType,
+) -> list:
+    return await stock_ledger_service.find_moves_by_source(
+        session, tenant_id, source_type, invoice_id
     )
-    return list(result.scalars().all())
 
 
 async def list_purchase_invoices(
@@ -961,7 +955,7 @@ async def post_purchase_invoice(
             http_status=422,
         )
 
-    existing_moves = await _find_stock_moves(session, tenant_id, invoice_id, "purchase_invoice")
+    existing_moves = await _find_stock_moves(session, tenant_id, invoice_id, StockMoveSourceType.PURCHASE)
     if existing_moves:
         raise AppException(
             code="purchase_invoice_stock_exists",
@@ -993,21 +987,11 @@ async def post_purchase_invoice(
                 http_status=422,
             )
         unit_id = line.unit_id or base_unit_id
-        if unit_id == base_unit_id:
-            quantity_base = line_quantity
-        else:
-            multiplier = await resolve_multiplier(session, tenant_id, unit_id, base_unit_id)
-            quantity_base = _quantize(line_quantity * multiplier)
         stock_payloads.append(
             {
                 "product_id": product.id,
-                "move_date": invoice_date,
-                "direction": StockMoveDirection.IN,
-                "quantity_base": quantity_base,
+                "quantity": line_quantity,
                 "unit_id": unit_id,
-                "quantity_original": line_quantity,
-                "reference_type": "purchase_invoice",
-                "reference_id": invoice_id,
             }
         )
 
@@ -1096,7 +1080,19 @@ async def post_purchase_invoice(
                     )
                     posted_entry = await ledger.post_entry(entry.id, commit=False)
                 for payload in stock_payloads:
-                    await stock_service.record_move(session, tenant_id, payload, commit=False)
+                    await stock_ledger_service.create_stock_move(
+                        session,
+                        tenant_id,
+                        {
+                            **payload,
+                            "direction": StockMoveDirection.IN,
+                            "source_type": StockMoveSourceType.PURCHASE,
+                            "source_id": invoice_id,
+                            "posting_journal_entry_id": posted_entry.id,
+                            "posted_at": posted_entry.posted_at or datetime.now(UTC),
+                        },
+                        commit=False,
+                    )
                 locked_invoice.status = PurchaseInvoiceStatus.POSTED
                 locked_invoice.posted_at = posted_entry.posted_at or datetime.now(UTC)
                 locked_invoice.posting_journal_entry_id = posted_entry.id
@@ -1212,13 +1208,6 @@ async def reverse_purchase_invoice(
             http_status=409,
         )
 
-    stock_moves = await _find_stock_moves(session, tenant_id, invoice_id, "purchase_invoice")
-    reversal_moves = await _find_stock_moves(session, tenant_id, invoice_id, "purchase_invoice_reverse")
-    move_payloads = [
-        (move.product_id, _quantize(move.quantity_base), move.unit_id, move.quantity_original)
-        for move in stock_moves
-    ]
-
     async with _transaction_scope(session):
         locked_result = await session.execute(
             select(PurchaseInvoice)
@@ -1235,23 +1224,16 @@ async def reverse_purchase_invoice(
             )
         ledger = LedgerService(session=session, tenant_id=tenant_id, actor_id=actor_id)
         reversed_entry = await ledger.reverse_entry(entry_id, reason=reason.strip(), commit=False)
-        if move_payloads and not reversal_moves:
-            for product_id, quantity_base, unit_id, quantity_original in move_payloads:
-                await stock_service.record_move(
-                    session,
-                    tenant_id,
-                    {
-                        "product_id": product_id,
-                        "move_date": invoice_date,
-                        "direction": StockMoveDirection.OUT,
-                        "quantity_base": quantity_base,
-                        "unit_id": unit_id,
-                        "quantity_original": quantity_original,
-                        "reference_type": "purchase_invoice_reverse",
-                        "reference_id": invoice_id,
-                    },
-                    commit=False,
-                )
+        stock_moves = await _find_stock_moves(session, tenant_id, invoice_id, StockMoveSourceType.PURCHASE)
+        if stock_moves:
+            await stock_ledger_service.create_reversal_moves(
+                session,
+                tenant_id,
+                source_id=invoice_id,
+                original_moves=stock_moves,
+                posting_journal_entry_id=reversed_entry.id,
+                posted_at=reversed_entry.posted_at or datetime.now(UTC),
+            )
         locked_invoice.status = PurchaseInvoiceStatus.REVERSED
         locked_invoice.reversed_at = reversed_entry.posted_at or datetime.now(UTC)
         locked_invoice.reversal_journal_entry_id = reversed_entry.id
