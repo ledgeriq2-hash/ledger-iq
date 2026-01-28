@@ -19,6 +19,8 @@ class PurchaseInvoiceLineBase(BaseSchema):
     quantity: Decimal
     unit_price: Decimal
     amount: Decimal
+    vat_rate: Decimal = Decimal("0")
+    vat_amount: Decimal = Decimal("0")
     expense_account_id: UUID
 
     @field_validator("quantity")
@@ -31,6 +33,13 @@ class PurchaseInvoiceLineBase(BaseSchema):
     @field_validator("unit_price", "amount")
     @classmethod
     def non_negative_amounts(cls, value: Decimal) -> Decimal:
+        if Decimal(str(value)) < 0:
+            raise ValueError("value must be non-negative")
+        return value
+
+    @field_validator("vat_rate", "vat_amount")
+    @classmethod
+    def vat_non_negative(cls, value: Decimal) -> Decimal:
         if Decimal(str(value)) < 0:
             raise ValueError("value must be non-negative")
         return value
@@ -48,6 +57,8 @@ class PurchaseInvoiceLineUpdate(BaseSchema):
     quantity: Decimal | None = None
     unit_price: Decimal | None = None
     amount: Decimal | None = None
+    vat_rate: Decimal | None = None
+    vat_amount: Decimal | None = None
     expense_account_id: UUID | None = None
 
     @field_validator("quantity")
@@ -68,9 +79,19 @@ class PurchaseInvoiceLineUpdate(BaseSchema):
             raise ValueError("value must be non-negative")
         return value
 
+    @field_validator("vat_rate", "vat_amount")
+    @classmethod
+    def vat_non_negative(cls, value: Decimal | None) -> Decimal | None:
+        if value is None:
+            return value
+        if Decimal(str(value)) < 0:
+            raise ValueError("value must be non-negative")
+        return value
+
 
 class PurchaseInvoiceLineOut(IDTimestampMixin, PurchaseInvoiceLineBase):
     id: UUID
+    base_amount: Decimal | None = None
 
 
 class PurchaseInvoiceBase(BaseSchema):
@@ -79,6 +100,7 @@ class PurchaseInvoiceBase(BaseSchema):
     invoice_date: date
     due_date: date | None = None
     currency_code: str | None = None
+    fx_rate: Decimal | None = None
     memo: str | None = None
 
     @field_validator("invoice_no")
@@ -102,6 +124,7 @@ class PurchaseInvoiceUpdate(BaseSchema):
     invoice_date: date | None = None
     due_date: date | None = None
     currency_code: str | None = None
+    fx_rate: Decimal | None = None
     memo: str | None = None
     lines: list[PurchaseInvoiceLineUpdate] | None = Field(default=None, min_length=1)
 
@@ -120,8 +143,12 @@ class PurchaseInvoiceOut(IDTimestampMixin, PurchaseInvoiceBase):
     id: UUID
     status: PurchaseInvoiceStatus = PurchaseInvoiceStatus.DRAFT
     subtotal: Decimal = Decimal("0")
+    vat_total: Decimal = Decimal("0")
     total: Decimal = Decimal("0")
     total_amount: Decimal = Decimal("0")
+    base_subtotal: Decimal = Decimal("0")
+    base_vat_total: Decimal = Decimal("0")
+    base_total: Decimal = Decimal("0")
     posted_at: datetime | None = None
     reversed_at: datetime | None = None
     posting_journal_entry_id: UUID | None = None
@@ -148,6 +175,7 @@ class PurchaseBillDraftBase(BaseSchema):
     invoice_date: date
     due_date: date | None = None
     currency_code: str | None = None
+    fx_rate: Decimal | None = None
     memo: str | None = None
 
     @field_validator("invoice_no")
@@ -173,6 +201,7 @@ class PurchaseBillUpdateDraft(BaseSchema):
     invoice_date: date | None = None
     due_date: date | None = None
     currency_code: str | None = None
+    fx_rate: Decimal | None = None
     memo: str | None = None
     lines: list[PurchaseInvoiceLineUpdate] | None = Field(default=None, min_length=1)
 
@@ -190,6 +219,7 @@ class PurchaseBillUpdateDraft(BaseSchema):
 class PurchaseBillLineRead(IDTimestampMixin, PurchaseInvoiceLineBase):
     id: UUID
     line_total: Decimal | None = None
+    base_amount: Decimal | None = None
 
 
 class PurchaseBillLineCreate(PurchaseInvoiceLineCreate):
@@ -204,7 +234,12 @@ class PurchaseBillRead(IDTimestampMixin, PurchaseBillDraftBase):
     id: UUID
     status: PurchaseInvoiceStatus = PurchaseInvoiceStatus.DRAFT
     subtotal: Decimal = Decimal("0")
+    vat_total: Decimal = Decimal("0")
     total: Decimal = Decimal("0")
+    total_amount: Decimal = Decimal("0")
+    base_subtotal: Decimal = Decimal("0")
+    base_vat_total: Decimal = Decimal("0")
+    base_total: Decimal = Decimal("0")
     posted_at: datetime | None = None
     reversed_at: datetime | None = None
     posting_journal_entry_id: UUID | None = None

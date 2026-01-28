@@ -16,6 +16,7 @@ __all__ = [
     "purchase_invoice_service",
     "customer_receipt_service",
     "vendor_payment_service",
+    "fx_revaluation_service",
     "vendor_service",
     "supplier_service",
     "tenant_service",

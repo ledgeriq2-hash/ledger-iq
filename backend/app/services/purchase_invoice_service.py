@@ -39,6 +39,14 @@ def _quantize(value: Decimal | str | int | float | None) -> Decimal:
     return Decimal(str(value or 0)).quantize(Decimal("0.01"))
 
 
+def _quantize_rate(value: Decimal | str | int | float | None) -> Decimal:
+    return Decimal(str(value or 0)).quantize(Decimal("0.0001"))
+
+
+def _quantize_fx(value: Decimal | str | int | float | None) -> Decimal:
+    return Decimal(str(value or 0)).quantize(Decimal("0.000001"))
+
+
 @asynccontextmanager
 async def _transaction_scope(session: AsyncSession):
     if session.in_transaction():
@@ -51,9 +59,21 @@ async def _resolve_currency(session: AsyncSession, tenant_id: UUID, currency_cod
     candidate = (currency_code or "").strip().upper()
     if candidate:
         return candidate
-    settings = await settings_service.get_settings(session, tenant_id)
-    fallback = (settings.currency or "").strip().upper()
+    fallback = await settings_service.get_base_currency(session, tenant_id)
     return fallback or DEFAULT_BASE_CURRENCY
+
+
+def _resolve_fx_rate(doc_currency: str, base_currency: str, fx_rate: Decimal | None) -> Decimal:
+    if doc_currency == base_currency:
+        return Decimal("1.000000")
+    rate = _quantize_fx(fx_rate)
+    if rate <= 0:
+        raise AppException(
+            code="fx_rate_required",
+            message="FX rate is required for non-base currency documents",
+            http_status=422,
+        )
+    return rate
 
 
 async def _get_account(session: AsyncSession, tenant_id: UUID, account_id: UUID) -> Account:
@@ -93,6 +113,26 @@ async def _get_ap_control_account_id(session: AsyncSession, tenant_id: UUID) -> 
             code="account_mapping_missing",
             message="AP control account mapping is missing",
             details={"key": "AP_CONTROL"},
+            http_status=422,
+        )
+    await _get_account(session, tenant_id, mapping.account_id)
+    return mapping.account_id
+
+
+async def _get_input_vat_account_id(session: AsyncSession, tenant_id: UUID) -> UUID:
+    keys = ["INPUT_VAT", "INPUT_VAT_ACCOUNT_ID"]
+    result = await session.execute(
+        select(AccountMapping).where(
+            AccountMapping.tenant_id == tenant_id,
+            AccountMapping.key.in_(keys),
+        )
+    )
+    mapping = result.scalars().first()
+    if not mapping:
+        raise AppException(
+            code="account_mapping_missing",
+            message="Input VAT account mapping is missing",
+            details={"keys": keys},
             http_status=422,
         )
     await _get_account(session, tenant_id, mapping.account_id)
@@ -204,6 +244,21 @@ def _normalize_lines(lines: Sequence[dict[str, Any]], *, require_all: bool) -> l
                 message="Line amount must equal quantity * unit_price",
                 http_status=422,
             )
+        vat_rate = _quantize_rate(line.get("vat_rate"))
+        if vat_rate < 0:
+            raise AppException(
+                code="purchase_invoice_line_invalid",
+                message="vat_rate must be non-negative",
+                http_status=422,
+            )
+        vat_amount = _quantize(computed_amount * vat_rate)
+        provided_vat_amount = line.get("vat_amount")
+        if provided_vat_amount is not None and _quantize(provided_vat_amount) != vat_amount:
+            raise AppException(
+                code="purchase_invoice_line_vat_mismatch",
+                message="vat_amount must equal amount * vat_rate",
+                http_status=422,
+            )
         normalized.append(
             {
                 "line_no": line.get("line_no"),
@@ -213,6 +268,8 @@ def _normalize_lines(lines: Sequence[dict[str, Any]], *, require_all: bool) -> l
                 "unit_id": line.get("unit_id"),
                 "unit_price": _quantize(unit_price),
                 "amount": computed_amount,
+                "vat_rate": vat_rate,
+                "vat_amount": vat_amount,
                 "expense_account_id": line.get("expense_account_id"),
             }
         )
@@ -227,21 +284,47 @@ def _sum_line_amounts(lines: Sequence[PurchaseInvoiceLine | dict[str, Any]]) -> 
     return total.quantize(Decimal("0.01"))
 
 
-def _apply_totals(invoice: PurchaseInvoice, total_amount: Decimal) -> None:
-    invoice.subtotal = total_amount
+def _sum_line_vat(lines: Sequence[PurchaseInvoiceLine | dict[str, Any]]) -> Decimal:
+    total = Decimal("0.00")
+    for line in lines:
+        amount = line.vat_amount if isinstance(line, PurchaseInvoiceLine) else line.get("vat_amount")
+        total += _quantize(amount)
+    return total.quantize(Decimal("0.01"))
+
+
+def _apply_totals(invoice: PurchaseInvoice, subtotal: Decimal, vat_total: Decimal) -> None:
+    subtotal_q = _quantize(subtotal)
+    vat_total_q = _quantize(vat_total)
+    total_amount = _quantize(subtotal_q + vat_total_q)
+    invoice.subtotal = subtotal_q
+    invoice.vat_total = vat_total_q
     invoice.total = total_amount
     invoice.total_amount = total_amount
 
 
+def _apply_base_totals(invoice: PurchaseInvoice, base_subtotal: Decimal, base_vat_total: Decimal) -> None:
+    base_subtotal_q = _quantize(base_subtotal)
+    base_vat_total_q = _quantize(base_vat_total)
+    base_total = _quantize(base_subtotal_q + base_vat_total_q)
+    invoice.base_subtotal = base_subtotal_q
+    invoice.base_vat_total = base_vat_total_q
+    invoice.base_total = base_total
+
+
 async def _recalculate_totals(session: AsyncSession, invoice: PurchaseInvoice) -> None:
     result = await session.execute(
-        select(func.coalesce(func.sum(PurchaseInvoiceLine.amount), 0)).where(
+        select(
+            func.coalesce(func.sum(PurchaseInvoiceLine.amount), 0),
+            func.coalesce(func.sum(PurchaseInvoiceLine.vat_amount), 0),
+        ).where(
             PurchaseInvoiceLine.tenant_id == invoice.tenant_id,
             PurchaseInvoiceLine.invoice_id == invoice.id,
         )
     )
-    total_amount = Decimal(str(result.scalar_one() or 0)).quantize(Decimal("0.01"))
-    _apply_totals(invoice, total_amount)
+    subtotal_amount, vat_total = result.one()
+    subtotal_amount = Decimal(str(subtotal_amount or 0)).quantize(Decimal("0.01"))
+    vat_total = Decimal(str(vat_total or 0)).quantize(Decimal("0.01"))
+    _apply_totals(invoice, subtotal_amount, vat_total)
 
 
 async def _replace_lines(
@@ -279,6 +362,8 @@ async def _replace_lines(
             unit_id=line.get("unit_id"),
             unit_price=_quantize(line.get("unit_price")),
             amount=_quantize(line.get("amount")),
+            vat_rate=_quantize_rate(line.get("vat_rate")),
+            vat_amount=_quantize(line.get("vat_amount")),
             expense_account_id=expense_account_id,
         )
         session.add(item)
@@ -472,6 +557,21 @@ async def add_purchase_invoice_line(
             message="Line amount must equal quantity * unit_price",
             http_status=422,
         )
+    vat_rate = _quantize_rate(data.get("vat_rate"))
+    if vat_rate < 0:
+        raise AppException(
+            code="purchase_invoice_line_invalid",
+            message="vat_rate must be non-negative",
+            http_status=422,
+        )
+    vat_amount = _quantize(amount * vat_rate)
+    provided_vat_amount = data.get("vat_amount")
+    if provided_vat_amount is not None and _quantize(provided_vat_amount) != vat_amount:
+        raise AppException(
+            code="purchase_invoice_line_vat_mismatch",
+            message="vat_amount must equal amount * vat_rate",
+            http_status=422,
+        )
 
     expense_account_id = data.get("expense_account_id")
     if not expense_account_id:
@@ -495,6 +595,8 @@ async def add_purchase_invoice_line(
         unit_id=data.get("unit_id"),
         unit_price=_quantize(unit_price),
         amount=amount,
+        vat_rate=vat_rate,
+        vat_amount=vat_amount,
         expense_account_id=expense_account_id,
     )
     session.add(line)
@@ -592,6 +694,25 @@ async def update_purchase_invoice_line(
                 http_status=422,
             )
 
+    vat_rate = _quantize_rate(data.get("vat_rate", line.vat_rate))
+    if vat_rate < 0:
+        raise AppException(
+            code="purchase_invoice_line_invalid",
+            message="vat_rate must be non-negative",
+            http_status=422,
+        )
+    vat_amount = _quantize(line.amount * vat_rate)
+    if "vat_amount" in data and data.get("vat_amount") is not None:
+        provided_vat_amount = _quantize(data.get("vat_amount"))
+        if provided_vat_amount != vat_amount:
+            raise AppException(
+                code="purchase_invoice_line_vat_mismatch",
+                message="vat_amount must equal amount * vat_rate",
+                http_status=422,
+            )
+    line.vat_rate = vat_rate
+    line.vat_amount = vat_amount
+
     if "expense_account_id" in data and data["expense_account_id"] is not None:
         await _get_account(session, tenant_id, data["expense_account_id"])
         line.expense_account_id = data["expense_account_id"]
@@ -654,7 +775,9 @@ async def create_purchase_invoice(
 
     lines_data = data.get("lines") or []
     normalized_lines = _normalize_lines(lines_data, require_all=True)
-    total_amount = _sum_line_amounts(normalized_lines)
+    subtotal_amount = _sum_line_amounts(normalized_lines)
+    vat_total = _sum_line_vat(normalized_lines)
+    total_amount = _quantize(subtotal_amount + vat_total)
     if total_amount <= 0:
         raise AppException(
             code="purchase_invoice_total_invalid",
@@ -683,9 +806,11 @@ async def create_purchase_invoice(
         invoice_date=invoice_date,
         due_date=data.get("due_date"),
         currency_code=data.get("currency_code"),
+        fx_rate=_quantize_fx(data.get("fx_rate")) if data.get("fx_rate") is not None else None,
         memo=data.get("memo"),
         status=PurchaseInvoiceStatus.DRAFT,
-        subtotal=total_amount,
+        subtotal=subtotal_amount,
+        vat_total=vat_total,
         total=total_amount,
         total_amount=total_amount,
     )
@@ -694,7 +819,7 @@ async def create_purchase_invoice(
         session.add(invoice)
         await session.flush()
         await _replace_lines(session, invoice, normalized_lines)
-        _apply_totals(invoice, _sum_line_amounts(normalized_lines))
+        _apply_totals(invoice, subtotal_amount, vat_total)
     await session.refresh(invoice)
     return invoice
 
@@ -741,6 +866,8 @@ async def update_purchase_invoice(
         invoice.due_date = data.get("due_date")
     if "currency_code" in data:
         invoice.currency_code = data.get("currency_code")
+    if "fx_rate" in data:
+        invoice.fx_rate = _quantize_fx(data.get("fx_rate")) if data.get("fx_rate") is not None else None
     if "memo" in data:
         invoice.memo = data.get("memo")
     if "vendor_id" in data and data["vendor_id"] is not None:
@@ -750,7 +877,9 @@ async def update_purchase_invoice(
     if "lines" in data and data["lines"] is not None:
         normalized_lines = _normalize_lines(data["lines"], require_all=True)
         await _replace_lines(session, invoice, normalized_lines)
-        _apply_totals(invoice, _sum_line_amounts(normalized_lines))
+        subtotal_amount = _sum_line_amounts(normalized_lines)
+        vat_total = _sum_line_vat(normalized_lines)
+        _apply_totals(invoice, subtotal_amount, vat_total)
 
     await session.commit()
     await session.refresh(invoice)
@@ -822,7 +951,9 @@ async def post_purchase_invoice(
             message="Purchase invoice requires at least one line",
             http_status=422,
         )
-    total_amount = _sum_line_amounts(invoice.lines)
+    subtotal_amount = _sum_line_amounts(invoice.lines)
+    vat_total = _sum_line_vat(invoice.lines)
+    total_amount = _quantize(subtotal_amount + vat_total)
     if total_amount <= 0:
         raise AppException(
             code="purchase_invoice_total_invalid",
@@ -882,6 +1013,12 @@ async def post_purchase_invoice(
 
     ap_account_id = await _get_ap_control_account_id(session, tenant_id)
     currency = await _resolve_currency(session, tenant_id, currency_code)
+    base_currency = await settings_service.get_base_currency(session, tenant_id)
+    fx_rate = _resolve_fx_rate(currency, base_currency, invoice.fx_rate)
+    line_fx_rate = fx_rate if currency != base_currency else None
+    input_vat_account_id: UUID | None = None
+    if vat_total > 0:
+        input_vat_account_id = await _get_input_vat_account_id(session, tenant_id)
 
     expense_totals: dict[UUID, Decimal] = {}
     for line in invoice.lines:
@@ -918,6 +1055,7 @@ async def post_purchase_invoice(
                         debit_amount=Decimal("0.00"),
                         credit_amount=total_amount,
                         line_currency=currency,
+                        fx_rate=line_fx_rate,
                         memo=f"Purchase invoice {invoice_no}",
                     )
                 ]
@@ -928,7 +1066,19 @@ async def post_purchase_invoice(
                             debit_amount=_quantize(amount),
                             credit_amount=Decimal("0.00"),
                             line_currency=currency,
+                            fx_rate=line_fx_rate,
                             memo=f"Purchase invoice {invoice_no}",
+                        )
+                    )
+                if vat_total > 0 and input_vat_account_id:
+                    lines.append(
+                        JournalLineCreate(
+                            account_id=input_vat_account_id,
+                            debit_amount=_quantize(vat_total),
+                            credit_amount=Decimal("0.00"),
+                            line_currency=currency,
+                            fx_rate=line_fx_rate,
+                            memo=f"Purchase invoice {invoice_no} VAT",
                         )
                     )
                 ledger = LedgerService(session=session, tenant_id=tenant_id, actor_id=actor_id)
@@ -937,7 +1087,7 @@ async def post_purchase_invoice(
                 else:
                     entry = await ledger.create_manual_entry(
                         entry_date=entry_date,
-                        base_currency=currency,
+                        base_currency=base_currency,
                         memo=f"Purchase invoice {invoice_no}",
                         source_type="purchase_invoice",
                         source_id=invoice_id,
@@ -950,7 +1100,22 @@ async def post_purchase_invoice(
                 locked_invoice.status = PurchaseInvoiceStatus.POSTED
                 locked_invoice.posted_at = posted_entry.posted_at or datetime.now(UTC)
                 locked_invoice.posting_journal_entry_id = posted_entry.id
-                _apply_totals(locked_invoice, total_amount)
+                locked_invoice.currency_code = currency
+                locked_invoice.fx_rate = fx_rate
+                _apply_totals(locked_invoice, subtotal_amount, vat_total)
+                _apply_base_totals(
+                    locked_invoice,
+                    _quantize(subtotal_amount * fx_rate),
+                    _quantize(vat_total * fx_rate),
+                )
+                line_result = await session.execute(
+                    select(PurchaseInvoiceLine).where(
+                        PurchaseInvoiceLine.tenant_id == tenant_id,
+                        PurchaseInvoiceLine.invoice_id == invoice_id,
+                    )
+                )
+                for line in line_result.scalars().all():
+                    line.base_amount = _quantize(line.amount * fx_rate)
                 invoice = locked_invoice
             break
         except IntegrityError as exc:

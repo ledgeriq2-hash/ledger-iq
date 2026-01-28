@@ -37,6 +37,10 @@ def _quantize(value: Decimal | str | int | float | None) -> Decimal:
     return Decimal(str(value or 0)).quantize(Decimal("0.01"))
 
 
+def _quantize_fx(value: Decimal | str | int | float | None) -> Decimal:
+    return Decimal(str(value or 0)).quantize(Decimal("0.000001"))
+
+
 @asynccontextmanager
 async def _transaction_scope(session: AsyncSession):
     if session.in_transaction():
@@ -49,9 +53,21 @@ async def _resolve_currency(session: AsyncSession, tenant_id: UUID, currency_cod
     candidate = (currency_code or "").strip().upper()
     if candidate:
         return candidate
-    settings = await settings_service.get_settings(session, tenant_id)
-    fallback = (settings.currency or "").strip().upper()
+    fallback = await settings_service.get_base_currency(session, tenant_id)
     return fallback or DEFAULT_BASE_CURRENCY
+
+
+def _resolve_fx_rate(doc_currency: str, base_currency: str, fx_rate: Decimal | None) -> Decimal:
+    if doc_currency == base_currency:
+        return Decimal("1.000000")
+    rate = _quantize_fx(fx_rate)
+    if rate <= 0:
+        raise AppException(
+            code="fx_rate_required",
+            message="FX rate is required for non-base currency payments",
+            http_status=422,
+        )
+    return rate
 
 
 async def _get_account(session: AsyncSession, tenant_id: UUID, account_id: UUID) -> Account:
@@ -340,6 +356,7 @@ async def create_payment(session: AsyncSession, tenant_id: UUID, payload: Any) -
         payment_no=payment_no,
         payment_date=payment_date,
         currency_code=data.get("currency_code"),
+        fx_rate=_quantize_fx(data.get("fx_rate")) if data.get("fx_rate") is not None else None,
         amount_total=amount_total,
         memo=data.get("memo"),
         cash_account_id=cash_account_id,
@@ -393,6 +410,34 @@ async def update_payment(
         payment.payment_date = data["payment_date"]
     if "currency_code" in data:
         payment.currency_code = data.get("currency_code")
+        allocations_result = await session.execute(
+            select(VendorPaymentAllocation.purchase_bill_id).where(
+                VendorPaymentAllocation.tenant_id == tenant_id,
+                VendorPaymentAllocation.payment_id == payment_id,
+            )
+        )
+        bill_ids = [row[0] for row in allocations_result.all()]
+        if bill_ids:
+            payment_currency = await _resolve_currency(session, tenant_id, payment.currency_code)
+            bills_result = await session.execute(
+                select(PurchaseInvoice.id, PurchaseInvoice.currency_code).where(
+                    PurchaseInvoice.tenant_id == tenant_id,
+                    PurchaseInvoice.id.in_(bill_ids),
+                )
+            )
+            bill_currency_map = {row[0]: row[1] for row in bills_result.all()}
+            for bill_id in bill_ids:
+                bill_currency = await _resolve_currency(
+                    session, tenant_id, bill_currency_map.get(bill_id)
+                )
+                if bill_currency != payment_currency:
+                    raise AppException(
+                        code="vendor_payment_currency_mismatch",
+                        message="Payment currency must match all allocated bills",
+                        http_status=409,
+                    )
+    if "fx_rate" in data:
+        payment.fx_rate = _quantize_fx(data.get("fx_rate")) if data.get("fx_rate") is not None else None
     if "memo" in data:
         payment.memo = data.get("memo")
     if "vendor_id" in data and data["vendor_id"] is not None:
@@ -472,6 +517,14 @@ async def _validate_allocation_target(
         raise AppException(
             code="vendor_payment_allocation_invalid",
             message="Allocation must reference a bill for the same vendor",
+            http_status=409,
+        )
+    payment_currency = await _resolve_currency(session, tenant_id, payment.currency_code)
+    bill_currency = await _resolve_currency(session, tenant_id, bill.currency_code)
+    if payment_currency != bill_currency:
+        raise AppException(
+            code="vendor_payment_currency_mismatch",
+            message="Payment currency must match bill currency",
             http_status=409,
         )
     bill_total = _bill_total(bill)
@@ -751,9 +804,14 @@ async def post_payment(
 
     unapplied_amount = _quantize(amount_total - applied_total)
 
+    currency = await _resolve_currency(session, tenant_id, payment.currency_code)
+    base_currency = await settings_service.get_base_currency(session, tenant_id)
+    fx_rate = _resolve_fx_rate(currency, base_currency, payment.fx_rate)
+    line_fx_rate = fx_rate if currency != base_currency else None
+    base_amount_total = _quantize(amount_total * fx_rate)
+
     ap_account_id = await _get_ap_control_account_id(session, tenant_id)
     prepay_account_id = await _get_vendor_prepay_account_id(session, tenant_id)
-    currency = await _resolve_currency(session, tenant_id, payment.currency_code)
 
     for attempt in range(5):
         try:
@@ -783,6 +841,7 @@ async def post_payment(
                         debit_amount=Decimal("0.00"),
                         credit_amount=amount_total,
                         line_currency=currency,
+                        fx_rate=line_fx_rate,
                         memo=f"Payment {payment_no}",
                     )
                 ]
@@ -793,6 +852,7 @@ async def post_payment(
                             debit_amount=applied_total,
                             credit_amount=Decimal("0.00"),
                             line_currency=currency,
+                            fx_rate=line_fx_rate,
                             memo=f"Payment {payment_no}",
                         )
                     )
@@ -803,6 +863,7 @@ async def post_payment(
                             debit_amount=unapplied_amount,
                             credit_amount=Decimal("0.00"),
                             line_currency=currency,
+                            fx_rate=line_fx_rate,
                             memo=f"Payment {payment_no}",
                         )
                     )
@@ -810,7 +871,7 @@ async def post_payment(
                 ledger = LedgerService(session=session, tenant_id=tenant_id, actor_id=actor_id)
                 entry = await ledger.create_manual_entry(
                     entry_date=locked_payment.payment_date,
-                    base_currency=currency,
+                    base_currency=base_currency,
                     memo=f"Payment {payment_no}",
                     source_type="vendor_payment",
                     source_id=payment_id,
@@ -821,6 +882,9 @@ async def post_payment(
                 locked_payment.status = VendorPaymentStatus.POSTED
                 locked_payment.posted_at = posted_entry.posted_at or datetime.now(UTC)
                 locked_payment.posting_journal_entry_id = posted_entry.id
+                locked_payment.currency_code = currency
+                locked_payment.fx_rate = fx_rate
+                locked_payment.base_amount_total = base_amount_total
                 payment = locked_payment
             break
         except IntegrityError as exc:

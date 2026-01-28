@@ -35,12 +35,14 @@ class CustomerReceipt(BaseModel):
     receipt_no: Mapped[str | None] = mapped_column(String(50), nullable=True)
     receipt_date: Mapped[date] = mapped_column(Date, nullable=False)
     currency_code: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    fx_rate: Mapped[Decimal | None] = mapped_column(Numeric(18, 6), nullable=True)
     status: Mapped[CustomerReceiptStatus] = mapped_column(
         SqlEnum(CustomerReceiptStatus, name="customer_receipt_status"),
         nullable=False,
         server_default=CustomerReceiptStatus.DRAFT.value,
     )
     amount_total: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False, server_default=text("0"))
+    base_amount_total: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False, server_default=text("0"))
     memo: Mapped[str | None] = mapped_column(String(255), nullable=True)
     cash_account_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),

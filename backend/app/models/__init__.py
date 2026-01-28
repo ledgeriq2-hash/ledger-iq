@@ -22,6 +22,8 @@ from app.models.employee import Employee, EmployeeStatus
 from app.models.error_event import ErrorEvent
 from app.models.expense import Expense
 from app.models.feedback import Feedback
+from app.models.fx_revaluation_line import FXRevaluationLine
+from app.models.fx_revaluation_run import FXRevaluationRun, FXRevaluationStatus
 from app.models.gdpr_request import GdprRequest
 from app.models.invoice import Invoice
 from app.models.invoice_item import InvoiceItem
@@ -90,6 +92,9 @@ ALL_MODELS = [
     ErrorEvent,
     Expense,
     Feedback,
+    FXRevaluationLine,
+    FXRevaluationRun,
+    FXRevaluationStatus,
     GdprRequest,
     Invoice,
     InvoiceItem,
@@ -158,6 +163,9 @@ __all__ = [
     "ErrorEvent",
     "Expense",
     "Feedback",
+    "FXRevaluationLine",
+    "FXRevaluationRun",
+    "FXRevaluationStatus",
     "GdprRequest",
     "Invoice",
     "InvoiceItem",

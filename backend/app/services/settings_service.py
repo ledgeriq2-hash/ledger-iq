@@ -7,6 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.tenant import Tenant
+
+DEFAULT_BASE_CURRENCY = "USD"
 from app.schemas.settings import AppSettings, AppSettingsUpdate
 
 
@@ -76,6 +78,19 @@ async def get_settings(session: AsyncSession, tenant_id: UUID) -> AppSettings:
     return AppSettings.model_validate(merged)
 
 
+async def get_base_currency(session: AsyncSession, tenant_id: UUID) -> str:
+    tenant = await session.scalar(select(Tenant).where(Tenant.id == tenant_id))
+    if not tenant:
+        return DEFAULT_BASE_CURRENCY
+    root = tenant.settings_json if isinstance(tenant.settings_json, dict) else {}
+    base = root.get("BASE_CURRENCY") or root.get("base_currency")
+    if isinstance(base, str) and base.strip():
+        return base.strip().upper()
+    settings = await get_settings(session, tenant_id)
+    candidate = (settings.currency or "").strip().upper()
+    return candidate or DEFAULT_BASE_CURRENCY
+
+
 async def update_settings(session: AsyncSession, tenant_id: UUID, payload: AppSettingsUpdate) -> AppSettings:
     tenant = await session.scalar(select(Tenant).where(Tenant.id == tenant_id))
     if not tenant:
@@ -102,4 +117,4 @@ async def update_settings(session: AsyncSession, tenant_id: UUID, payload: AppSe
     return validated
 
 
-__all__ = ["get_settings", "update_settings"]
+__all__ = ["get_settings", "update_settings", "get_base_currency", "DEFAULT_BASE_CURRENCY"]

@@ -37,6 +37,10 @@ def _quantize(value: Decimal | str | int | float | None) -> Decimal:
     return Decimal(str(value or 0)).quantize(Decimal("0.01"))
 
 
+def _quantize_fx(value: Decimal | str | int | float | None) -> Decimal:
+    return Decimal(str(value or 0)).quantize(Decimal("0.000001"))
+
+
 @asynccontextmanager
 async def _transaction_scope(session: AsyncSession):
     if session.in_transaction():
@@ -49,9 +53,21 @@ async def _resolve_currency(session: AsyncSession, tenant_id: UUID, currency_cod
     candidate = (currency_code or "").strip().upper()
     if candidate:
         return candidate
-    settings = await settings_service.get_settings(session, tenant_id)
-    fallback = (settings.currency or "").strip().upper()
+    fallback = await settings_service.get_base_currency(session, tenant_id)
     return fallback or DEFAULT_BASE_CURRENCY
+
+
+def _resolve_fx_rate(doc_currency: str, base_currency: str, fx_rate: Decimal | None) -> Decimal:
+    if doc_currency == base_currency:
+        return Decimal("1.000000")
+    rate = _quantize_fx(fx_rate)
+    if rate <= 0:
+        raise AppException(
+            code="fx_rate_required",
+            message="FX rate is required for non-base currency receipts",
+            http_status=422,
+        )
+    return rate
 
 
 async def _get_account(session: AsyncSession, tenant_id: UUID, account_id: UUID) -> Account:
@@ -340,6 +356,7 @@ async def create_receipt(session: AsyncSession, tenant_id: UUID, payload: Any) -
         receipt_no=receipt_no,
         receipt_date=receipt_date,
         currency_code=data.get("currency_code"),
+        fx_rate=_quantize_fx(data.get("fx_rate")) if data.get("fx_rate") is not None else None,
         amount_total=amount_total,
         memo=data.get("memo"),
         cash_account_id=cash_account_id,
@@ -393,6 +410,34 @@ async def update_receipt(
         receipt.receipt_date = data["receipt_date"]
     if "currency_code" in data:
         receipt.currency_code = data.get("currency_code")
+        allocations_result = await session.execute(
+            select(CustomerReceiptAllocation.sales_invoice_id).where(
+                CustomerReceiptAllocation.tenant_id == tenant_id,
+                CustomerReceiptAllocation.receipt_id == receipt_id,
+            )
+        )
+        invoice_ids = [row[0] for row in allocations_result.all()]
+        if invoice_ids:
+            receipt_currency = await _resolve_currency(session, tenant_id, receipt.currency_code)
+            invoices_result = await session.execute(
+                select(SalesInvoice.id, SalesInvoice.currency_code).where(
+                    SalesInvoice.tenant_id == tenant_id,
+                    SalesInvoice.id.in_(invoice_ids),
+                )
+            )
+            invoice_currency_map = {row[0]: row[1] for row in invoices_result.all()}
+            for invoice_id in invoice_ids:
+                invoice_currency = await _resolve_currency(
+                    session, tenant_id, invoice_currency_map.get(invoice_id)
+                )
+                if invoice_currency != receipt_currency:
+                    raise AppException(
+                        code="customer_receipt_currency_mismatch",
+                        message="Receipt currency must match all allocated invoices",
+                        http_status=409,
+                    )
+    if "fx_rate" in data:
+        receipt.fx_rate = _quantize_fx(data.get("fx_rate")) if data.get("fx_rate") is not None else None
     if "memo" in data:
         receipt.memo = data.get("memo")
     if "customer_id" in data and data["customer_id"] is not None:
@@ -472,6 +517,14 @@ async def _validate_allocation_target(
         raise AppException(
             code="customer_receipt_allocation_invalid",
             message="Allocation must reference an invoice for the same customer",
+            http_status=409,
+        )
+    receipt_currency = await _resolve_currency(session, tenant_id, receipt.currency_code)
+    invoice_currency = await _resolve_currency(session, tenant_id, invoice.currency_code)
+    if receipt_currency != invoice_currency:
+        raise AppException(
+            code="customer_receipt_currency_mismatch",
+            message="Receipt currency must match invoice currency",
             http_status=409,
         )
     invoice_total = _invoice_total(invoice)
@@ -751,9 +804,14 @@ async def post_receipt(
 
     unapplied_amount = _quantize(amount_total - applied_total)
 
+    currency = await _resolve_currency(session, tenant_id, receipt.currency_code)
+    base_currency = await settings_service.get_base_currency(session, tenant_id)
+    fx_rate = _resolve_fx_rate(currency, base_currency, receipt.fx_rate)
+    line_fx_rate = fx_rate if currency != base_currency else None
+    base_amount_total = _quantize(amount_total * fx_rate)
+
     ar_account_id = await _get_ar_control_account_id(session, tenant_id)
     credit_account_id = await _get_customer_credit_account_id(session, tenant_id)
-    currency = await _resolve_currency(session, tenant_id, receipt.currency_code)
 
     for attempt in range(5):
         try:
@@ -783,6 +841,7 @@ async def post_receipt(
                         debit_amount=amount_total,
                         credit_amount=Decimal("0.00"),
                         line_currency=currency,
+                        fx_rate=line_fx_rate,
                         memo=f"Receipt {receipt_no}",
                     )
                 ]
@@ -793,6 +852,7 @@ async def post_receipt(
                             debit_amount=Decimal("0.00"),
                             credit_amount=applied_total,
                             line_currency=currency,
+                            fx_rate=line_fx_rate,
                             memo=f"Receipt {receipt_no}",
                         )
                     )
@@ -803,6 +863,7 @@ async def post_receipt(
                             debit_amount=Decimal("0.00"),
                             credit_amount=unapplied_amount,
                             line_currency=currency,
+                            fx_rate=line_fx_rate,
                             memo=f"Receipt {receipt_no}",
                         )
                     )
@@ -810,7 +871,7 @@ async def post_receipt(
                 ledger = LedgerService(session=session, tenant_id=tenant_id, actor_id=actor_id)
                 entry = await ledger.create_manual_entry(
                     entry_date=locked_receipt.receipt_date,
-                    base_currency=currency,
+                    base_currency=base_currency,
                     memo=f"Receipt {receipt_no}",
                     source_type="customer_receipt",
                     source_id=receipt_id,
@@ -821,6 +882,9 @@ async def post_receipt(
                 locked_receipt.status = CustomerReceiptStatus.POSTED
                 locked_receipt.posted_at = posted_entry.posted_at or datetime.now(UTC)
                 locked_receipt.posting_journal_entry_id = posted_entry.id
+                locked_receipt.currency_code = currency
+                locked_receipt.fx_rate = fx_rate
+                locked_receipt.base_amount_total = base_amount_total
                 receipt = locked_receipt
             break
         except IntegrityError as exc:

@@ -70,6 +70,13 @@ from app.schemas.vendor_payment import (
     VendorPaymentStatus,
     VendorPaymentUpdateDraft,
 )
+from app.schemas.fx_revaluation import (
+    FXRevaluationLineRead,
+    FXRevaluationRunCreate,
+    FXRevaluationRunList,
+    FXRevaluationRunRead,
+    FXRevaluationStatus,
+)
 
 __all__ = [
     "CustomerCreate",
@@ -103,6 +110,11 @@ __all__ = [
     "VendorPaymentRead",
     "VendorPaymentListOut",
     "VendorPaymentStatus",
+    "FXRevaluationLineRead",
+    "FXRevaluationRunCreate",
+    "FXRevaluationRunList",
+    "FXRevaluationRunRead",
+    "FXRevaluationStatus",
     "SalesInvoiceCreate",
     "SalesInvoiceUpdate",
     "SalesInvoiceOut",

@@ -37,14 +37,19 @@ class PurchaseInvoice(BaseModel):
     due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     currency_code: Mapped[str | None] = mapped_column(String(10), nullable=True)
     memo: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    fx_rate: Mapped[Decimal | None] = mapped_column(Numeric(18, 6), nullable=True)
     status: Mapped[PurchaseInvoiceStatus] = mapped_column(
         SqlEnum(PurchaseInvoiceStatus, name="purchase_invoice_status"),
         nullable=False,
         server_default=PurchaseInvoiceStatus.DRAFT.value,
     )
     subtotal: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False, server_default=text("0"))
+    vat_total: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False, server_default=text("0"))
     total: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False, server_default=text("0"))
     total_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False, server_default=text("0"))
+    base_subtotal: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False, server_default=text("0"))
+    base_vat_total: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False, server_default=text("0"))
+    base_total: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False, server_default=text("0"))
     posted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     reversed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     posting_journal_entry_id: Mapped[uuid.UUID | None] = mapped_column(

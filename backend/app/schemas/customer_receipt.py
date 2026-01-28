@@ -52,6 +52,7 @@ class CustomerReceiptDraftBase(BaseSchema):
     amount_total: Decimal
     cash_account_id: UUID
     currency_code: str | None = None
+    fx_rate: Decimal | None = None
     memo: str | None = None
 
     @field_validator("amount_total")
@@ -83,6 +84,7 @@ class CustomerReceiptUpdateDraft(BaseSchema):
     amount_total: Decimal | None = None
     cash_account_id: UUID | None = None
     currency_code: str | None = None
+    fx_rate: Decimal | None = None
     memo: str | None = None
 
     @field_validator("amount_total")
@@ -112,6 +114,7 @@ class CustomerReceiptRead(IDTimestampMixin, CustomerReceiptDraftBase):
     reversed_at: datetime | None = None
     posting_journal_entry_id: UUID | None = None
     reversal_journal_entry_id: UUID | None = None
+    base_amount_total: Decimal | None = None
     allocations: list[CustomerReceiptAllocationRead] | None = None
 
 
