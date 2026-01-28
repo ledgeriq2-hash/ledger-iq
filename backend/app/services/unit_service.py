@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
@@ -18,6 +19,17 @@ def _to_dict(payload: Any, *, exclude_unset: bool = False) -> dict[str, Any]:
     if isinstance(payload, dict):
         return payload
     raise TypeError("payload must be a mapping or pydantic model")
+
+
+def _normalize_ratio(value: Decimal | str | int | float | None) -> Decimal:
+    ratio = Decimal(str(value or 0)).quantize(Decimal("0.000001"))
+    if ratio <= 0:
+        raise AppException(
+            code="unit_ratio_invalid",
+            message="ratio_to_base must be greater than zero",
+            http_status=422,
+        )
+    return ratio
 
 
 async def list_units(
@@ -44,8 +56,18 @@ async def create_unit(session: AsyncSession, tenant_id: UUID, payload: Any) -> U
         raise AppException(code="unit_code_required", message="Unit code is required", http_status=422)
     if not name:
         raise AppException(code="unit_name_required", message="Unit name is required", http_status=422)
+    ratio_to_base = _normalize_ratio(data.get("ratio_to_base") or 1)
+    is_base = ratio_to_base == Decimal("1.000000")
+    if data.get("is_base") is True and not is_base:
+        raise AppException(
+            code="unit_ratio_mismatch",
+            message="ratio_to_base must be 1 for base units",
+            http_status=422,
+        )
     data["code"] = code
     data["name"] = name
+    data["ratio_to_base"] = ratio_to_base
+    data["is_base"] = is_base
 
     existing = await session.execute(
         select(Unit.id).where(Unit.tenant_id == tenant_id, Unit.code == code)
@@ -78,7 +100,7 @@ async def update_unit(
     if not unit:
         return None
     data = _to_dict(payload, exclude_unset=True)
-    allowed_fields = {"code", "name", "is_base"}
+    allowed_fields = {"code", "name", "is_base", "ratio_to_base"}
     changes = {field: value for field, value in data.items() if field in allowed_fields}
     if not changes:
         return unit
@@ -103,6 +125,27 @@ async def update_unit(
         if not name:
             raise AppException(code="unit_name_required", message="Unit name is required", http_status=422)
         changes["name"] = name
+
+    if "ratio_to_base" in changes:
+        ratio_to_base = _normalize_ratio(changes.get("ratio_to_base"))
+        changes["ratio_to_base"] = ratio_to_base
+        derived_is_base = ratio_to_base == Decimal("1.000000")
+        if "is_base" in changes and changes.get("is_base") != derived_is_base:
+            raise AppException(
+                code="unit_ratio_mismatch",
+                message="ratio_to_base must be 1 for base units",
+                http_status=422,
+            )
+        changes["is_base"] = derived_is_base
+    elif "is_base" in changes:
+        if changes.get("is_base"):
+            changes["ratio_to_base"] = Decimal("1.000000")
+        else:
+            raise AppException(
+                code="unit_ratio_required",
+                message="ratio_to_base is required when is_base is false",
+                http_status=422,
+            )
 
     for field, value in changes.items():
         setattr(unit, field, value)

@@ -14,7 +14,7 @@ from app.models.base import BaseModel
 
 
 if TYPE_CHECKING:
-    from app.models.unit import Unit
+    from app.models.unit import InventoryUnit
 
 
 class ProductStatus(str, Enum):
@@ -25,6 +25,7 @@ class ProductStatus(str, Enum):
 class Product(BaseModel):
     __tablename__ = "products"
 
+    code: Mapped[str] = mapped_column(String(20), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     sku: Mapped[str | None] = mapped_column(String(100), nullable=True)
     status: Mapped[ProductStatus] = mapped_column(
@@ -32,9 +33,10 @@ class Product(BaseModel):
         nullable=False,
         server_default=ProductStatus.ACTIVE.value,
     )
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("TRUE"))
     base_unit_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("units.id", ondelete="RESTRICT"),
+        ForeignKey("inventory_units.id", ondelete="RESTRICT"),
         nullable=True,
     )
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -45,13 +47,15 @@ class Product(BaseModel):
     is_service: Mapped[bool] = mapped_column(Boolean, nullable=False, server_default=text("FALSE"))
     category: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
-    base_unit: Mapped["Unit | None"] = relationship("Unit", lazy="joined")
+    base_unit: Mapped["InventoryUnit | None"] = relationship("InventoryUnit", lazy="joined")
 
     __table_args__ = (
         UniqueConstraint("tenant_id", "sku", name="uq_products_tenant_sku"),
+        UniqueConstraint("tenant_id", "code", name="uq_products_tenant_code"),
         Index("ix_products_tenant_id", "tenant_id"),
         Index("ix_products_created_at", "created_at"),
         Index("ix_products_tenant_status", "tenant_id", "status"),
+        Index("ix_products_tenant_code", "tenant_id", "code"),
     )
 
 

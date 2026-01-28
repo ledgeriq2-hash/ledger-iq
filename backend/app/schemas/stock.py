@@ -1,49 +1,25 @@
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import Field, field_validator
-
 from app.core.pagination import PaginatedResponse
-from app.models.stock_move import StockMoveDirection
+from app.models.stock_move import StockMoveDirection, StockMoveSourceType
 from app.schemas.common import BaseSchema, IDTimestampMixin
 
 
 class StockMoveBase(BaseSchema):
     product_id: UUID
-    move_date: date
-    direction: StockMoveDirection
-    quantity_base: Decimal = Field(..., gt=0)
+    quantity: Decimal
     unit_id: UUID | None = None
-    quantity_original: Decimal | None = None
-    reference_type: str
-    reference_id: UUID
-
-    @field_validator("quantity_base")
-    @classmethod
-    def quantity_base_positive(cls, value: Decimal) -> Decimal:
-        if Decimal(str(value)) <= 0:
-            raise ValueError("quantity_base must be greater than zero")
-        return value
-
-    @field_validator("quantity_original")
-    @classmethod
-    def quantity_original_positive(cls, value: Decimal | None) -> Decimal | None:
-        if value is None:
-            return value
-        if Decimal(str(value)) <= 0:
-            raise ValueError("quantity_original must be greater than zero")
-        return value
-
-    @field_validator("reference_type")
-    @classmethod
-    def reference_type_not_blank(cls, value: str) -> str:
-        cleaned = (value or "").strip()
-        if not cleaned:
-            raise ValueError("reference_type must not be blank")
-        return cleaned
+    base_quantity: Decimal
+    direction: StockMoveDirection
+    source_type: StockMoveSourceType
+    source_id: UUID
+    posting_journal_entry_id: UUID | None = None
+    posted_at: datetime
+    reversed_stock_move_id: UUID | None = None
 
 
 class StockMoveCreate(StockMoveBase):
@@ -52,17 +28,19 @@ class StockMoveCreate(StockMoveBase):
 
 class StockMoveOut(IDTimestampMixin, StockMoveBase):
     id: UUID
-    posted_journal_entry_id: UUID | None = None
 
 
 class StockMoveListOut(PaginatedResponse[StockMoveOut]):
     pass
 
 
+class StockLedgerListOut(PaginatedResponse[StockMoveOut]):
+    pass
+
+
 class StockBalanceOut(BaseSchema):
     product_id: UUID
-    on_hand_qty_base: Decimal
-    updated_at: datetime | None = None
+    base_quantity: Decimal
 
 
 class StockBalanceListOut(PaginatedResponse[StockBalanceOut]):
@@ -74,7 +52,9 @@ __all__ = [
     "StockMoveCreate",
     "StockMoveOut",
     "StockMoveListOut",
+    "StockLedgerListOut",
     "StockBalanceOut",
     "StockBalanceListOut",
     "StockMoveDirection",
+    "StockMoveSourceType",
 ]

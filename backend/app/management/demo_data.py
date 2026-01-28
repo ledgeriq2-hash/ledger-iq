@@ -16,6 +16,7 @@ from app.models.invoice import Invoice
 from app.models.payment import Payment
 from app.models.portal_token import PortalEntityType, PortalToken
 from app.models.product import Product
+from app.models.unit import InventoryUnit
 from app.models.supplier import Supplier
 from app.models.treasury import Treasury
 from app.models.treasury_transaction import TreasuryTransaction
@@ -126,11 +127,52 @@ async def _ensure_employees(session, tenant):
     return created
 
 
+async def _ensure_base_unit(session, tenant):
+    existing = await session.execute(
+        select(InventoryUnit)
+        .where(InventoryUnit.tenant_id == tenant.id)
+        .order_by(InventoryUnit.created_at.asc())
+    )
+    unit = existing.scalars().first()
+    if unit:
+        return unit
+    unit = InventoryUnit(
+        tenant_id=tenant.id,
+        code="EA",
+        name="Each",
+        ratio_to_base=Decimal("1"),
+        is_base=True,
+    )
+    session.add(unit)
+    await session.commit()
+    await session.refresh(unit)
+    return unit
+
+
 async def _ensure_products(session, tenant):
+    base_unit = await _ensure_base_unit(session, tenant)
     products_payload = [
-        {"name": "Consulting Hours", "sku": "CONS-01", "unit_price": Decimal("150.00"), "is_service": True},
-        {"name": "Implementation Package", "sku": "IMPL-10", "unit_price": Decimal("1200.00"), "is_service": True},
-        {"name": "Support Plan", "sku": "SUP-99", "unit_price": Decimal("299.00"), "is_service": True},
+        {
+            "name": "Consulting Hours",
+            "sku": "CONS-01",
+            "unit_price": Decimal("150.00"),
+            "is_service": True,
+            "base_unit_id": base_unit.id,
+        },
+        {
+            "name": "Implementation Package",
+            "sku": "IMPL-10",
+            "unit_price": Decimal("1200.00"),
+            "is_service": True,
+            "base_unit_id": base_unit.id,
+        },
+        {
+            "name": "Support Plan",
+            "sku": "SUP-99",
+            "unit_price": Decimal("299.00"),
+            "is_service": True,
+            "base_unit_id": base_unit.id,
+        },
     ]
     created = []
     for payload in products_payload:

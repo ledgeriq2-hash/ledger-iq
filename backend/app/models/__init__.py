@@ -44,7 +44,7 @@ from app.models.role import Role
 from app.models.sales_invoice import SalesInvoice, SalesInvoiceStatus
 from app.models.sales_invoice_line import SalesInvoiceLine
 from app.models.stock_balance import StockBalance
-from app.models.stock_move import StockMove, StockMoveDirection
+from app.models.stock_move import StockMove, StockMoveDirection, StockMoveSourceType
 from app.models.stock_movement import StockMovement
 from app.models.stripe_event import StripeEvent
 from app.models.supplier import Supplier
@@ -60,7 +60,7 @@ from app.models.treasury_cash_transaction import (
     TreasuryCashTransaction,
 )
 from app.models.treasury_transaction import TreasuryTransaction
-from app.models.unit import Unit
+from app.models.unit import InventoryUnit, Unit
 from app.models.unit_conversion import UnitConversion
 from app.models.user import User
 from app.models.vendor import Vendor, VendorStatus
@@ -128,6 +128,7 @@ ALL_MODELS = [
     TreasuryCashAccount,
     TreasuryCashTransaction,
     TreasuryTransaction,
+    InventoryUnit,
     Unit,
     UnitConversion,
     User,
@@ -191,6 +192,7 @@ __all__ = [
     "StockMovement",
     "StockMove",
     "StockMoveDirection",
+    "StockMoveSourceType",
     "StockBalance",
     "StripeEvent",
     "Supplier",
@@ -204,6 +206,7 @@ __all__ = [
     "CashTransactionType",
     "TreasuryCashTransaction",
     "TreasuryTransaction",
+    "InventoryUnit",
     "Unit",
     "UnitConversion",
     "User",

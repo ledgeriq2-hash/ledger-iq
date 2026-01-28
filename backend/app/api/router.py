@@ -22,6 +22,7 @@ from app.api.v1.dimensions import router as dimensions_router
 from app.api.v1.employees import router as employees_router
 from app.api.v1.feedback import router as feedback_router
 from app.api.v1.fx_revaluation import router as fx_revaluation_router
+from app.api.v1.inventory_units import router as inventory_units_router
 from app.api.v1.inventory import router as inventory_router
 from app.api.v1.journals import router as journals_router
 from app.api.v1.journal_lines import router as journal_lines_router
@@ -48,6 +49,7 @@ _include(dimensions_router, prefix="/v1", tags=["dimensions"])
 _include(employees_router, prefix="/v1", tags=["employees"])
 _include(feedback_router, prefix="/v1", tags=["feedback"])
 _include(fx_revaluation_router, prefix="/v1", tags=["fx_revaluation"])
+_include(inventory_units_router, prefix="/v1", tags=["inventory_units"])
 _include(inventory_router, prefix="/v1", tags=["inventory"])
 _include(journals_router, prefix="/v1", tags=["journals"])
 _include(journal_lines_router, prefix="/v1", tags=["journal_lines"])

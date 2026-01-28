@@ -14,7 +14,7 @@ from app.models.base import BaseModel
 if TYPE_CHECKING:
     from app.models.product import Product
     from app.models.purchase_invoice import PurchaseInvoice
-    from app.models.unit import Unit
+    from app.models.unit import InventoryUnit
 
 
 class PurchaseInvoiceLine(BaseModel):
@@ -35,7 +35,7 @@ class PurchaseInvoiceLine(BaseModel):
     )
     unit_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("units.id", ondelete="SET NULL"),
+        ForeignKey("inventory_units.id", ondelete="SET NULL"),
         nullable=True,
     )
     unit_price: Mapped[Decimal] = mapped_column(Numeric(18, 2), nullable=False, server_default=text("0"))
@@ -52,7 +52,7 @@ class PurchaseInvoiceLine(BaseModel):
     invoice: Mapped["PurchaseInvoice"] = relationship("PurchaseInvoice", back_populates="lines", lazy="joined")
     expense_account: Mapped[Account] = relationship("Account", lazy="joined")
     product: Mapped["Product | None"] = relationship("Product", lazy="joined")
-    unit: Mapped["Unit | None"] = relationship("Unit", lazy="joined")
+    unit: Mapped["InventoryUnit | None"] = relationship("InventoryUnit", lazy="joined")
 
     @property
     def line_total(self) -> Decimal:

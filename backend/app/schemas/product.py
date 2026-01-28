@@ -12,9 +12,11 @@ from app.schemas.common import BaseSchema, IDTimestampMixin
 class ProductBase(BaseSchema):
     model_config = {"from_attributes": True, "populate_by_name": True}
 
-    sku: str
+    code: str | None = None
+    sku: str | None = None
     name: str
     status: ProductStatus = ProductStatus.ACTIVE
+    is_active: bool = True
     base_unit_id: UUID
     notes: str | None = None
     metadata_json: dict | None = Field(default=None, serialization_alias="metadata")
@@ -38,10 +40,22 @@ class ProductBase(BaseSchema):
 
     @field_validator("sku")
     @classmethod
-    def sku_not_blank(cls, v: str) -> str:
-        value = (v or "").strip()
+    def sku_not_blank(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        value = v.strip()
         if not value:
             raise ValueError("sku must not be blank")
+        return value
+
+    @field_validator("code")
+    @classmethod
+    def code_not_blank(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        value = v.strip()
+        if not value:
+            raise ValueError("code must not be blank")
         return value
 
 
@@ -52,9 +66,11 @@ class ProductCreate(ProductBase):
 class ProductUpdate(BaseSchema):
     model_config = {"from_attributes": True, "populate_by_name": True}
 
+    code: str | None = None
     sku: str | None = None
     name: str | None = None
     status: ProductStatus | None = None
+    is_active: bool | None = None
     base_unit_id: UUID | None = None
     notes: str | None = None
     metadata_json: dict | None = Field(default=None, serialization_alias="metadata")
@@ -86,6 +102,16 @@ class ProductUpdate(BaseSchema):
         value = v.strip()
         if not value:
             raise ValueError("sku must not be blank")
+        return value
+
+    @field_validator("code")
+    @classmethod
+    def update_code_not_blank(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        value = v.strip()
+        if not value:
+            raise ValueError("code must not be blank")
         return value
 
 

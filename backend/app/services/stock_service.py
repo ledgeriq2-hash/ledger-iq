@@ -14,7 +14,7 @@ from app.core.exceptions import AppException
 from app.core.pagination import PaginationParams, paginate_query
 from app.models.product import Product, ProductStatus
 from app.models.stock_balance import StockBalance
-from app.models.stock_move import StockMove, StockMoveDirection
+from app.models.stock_move import StockMove, StockMoveDirection, StockMoveSourceType
 from app.models.unit import Unit
 from app.services.period_guard import PeriodGuard
 from app.services.unit_conversion_service import resolve_multiplier
@@ -32,6 +32,19 @@ def _quantize(value: Decimal | str | int | float | None) -> Decimal:
     return Decimal(str(value or 0)).quantize(Decimal("0.01"))
 
 
+def _resolve_source_type(
+    reference_type: str | None, direction: StockMoveDirection
+) -> StockMoveSourceType:
+    ref = (reference_type or "").lower()
+    if "purchase" in ref:
+        return StockMoveSourceType.PURCHASE
+    if "sale" in ref:
+        return StockMoveSourceType.SALE
+    if "reverse" in ref:
+        return StockMoveSourceType.REVERSAL
+    return StockMoveSourceType.SALE if direction == StockMoveDirection.OUT else StockMoveSourceType.PURCHASE
+
+
 @asynccontextmanager
 async def _transaction_scope(session: AsyncSession):
     if session.in_transaction():
@@ -47,7 +60,7 @@ async def _get_product(session: AsyncSession, tenant_id: UUID, product_id: UUID)
     product = result.scalar_one_or_none()
     if not product:
         raise AppException(code="product_not_found", message="Product not found", http_status=404)
-    if getattr(product, "status", None) == ProductStatus.INACTIVE:
+    if getattr(product, "status", None) == ProductStatus.INACTIVE or getattr(product, "is_active", True) is False:
         raise AppException(code="product_inactive", message="Product is inactive", http_status=409)
     return product
 
@@ -238,17 +251,49 @@ async def record_move(
         else:
             new_qty = current_qty + quantity_base
 
+        quantity_value = quantity_original if quantity_original is not None else quantity_base
+        quantity_signed = quantity_value if direction == StockMoveDirection.IN else -quantity_value
+        base_quantity_signed = quantity_base if direction == StockMoveDirection.IN else -quantity_base
+        source_type_value = data.get("source_type")
+        if source_type_value is None:
+            source_type = _resolve_source_type(reference_type, direction)
+        else:
+            try:
+                source_type = (
+                    source_type_value
+                    if isinstance(source_type_value, StockMoveSourceType)
+                    else StockMoveSourceType(str(source_type_value))
+                )
+            except Exception as exc:
+                raise AppException(
+                    code="stock_move_source_invalid",
+                    message="Source type is invalid",
+                    http_status=422,
+                ) from exc
+        source_id = data.get("source_id") or reference_id
+        posted_at = data.get("posted_at")
+        if posted_at is None:
+            posted_at = datetime.combine(move_date, datetime.min.time(), tzinfo=UTC)
+        elif isinstance(posted_at, date):
+            posted_at = datetime.combine(posted_at, datetime.min.time(), tzinfo=UTC)
+        posting_entry_id = data.get("posting_journal_entry_id") or data.get("posted_journal_entry_id")
         move = StockMove(
             tenant_id=tenant_id,
             product_id=product_id,
+            quantity=quantity_signed,
+            unit_id=unit_id,
+            base_quantity=base_quantity_signed,
+            source_type=source_type,
+            source_id=source_id,
+            posting_journal_entry_id=posting_entry_id,
+            posted_at=posted_at,
+            reversed_stock_move_id=data.get("reversed_stock_move_id"),
             move_date=move_date,
             direction=direction,
             quantity_base=quantity_base,
-            unit_id=unit_id,
             quantity_original=quantity_original,
             reference_type=reference_type,
             reference_id=reference_id,
-            posted_journal_entry_id=data.get("posted_journal_entry_id"),
         )
         session.add(move)
         balance.on_hand_qty_base = new_qty

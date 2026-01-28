@@ -56,8 +56,23 @@ async def create_product(
     return await product_service.create_product(session, tenant_id, payload)
 
 
-@router.patch("/{product_id}", response_model=ProductOut)
+@router.put("/{product_id}", response_model=ProductOut)
 async def update_product(
+    product_id: UUID,
+    payload: ProductUpdate,
+    session: AsyncSession = Depends(deps.get_db),
+    tenant_id: UUID = Depends(deps.get_current_tenant),
+    _: User = Depends(deps.get_current_active_user),
+    __: User = Depends(require_roles([OWNER, ADMIN, ACCOUNTANT])),
+):
+    product = await product_service.update_product(session, tenant_id, product_id, payload)
+    if not product:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Product not found")
+    return product
+
+
+@router.patch("/{product_id}", response_model=ProductOut)
+async def patch_product(
     product_id: UUID,
     payload: ProductUpdate,
     session: AsyncSession = Depends(deps.get_db),

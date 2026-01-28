@@ -8,7 +8,7 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import BaseModel
-from app.models.unit import Unit
+from app.models.unit import InventoryUnit
 
 
 class UnitConversion(BaseModel):
@@ -16,12 +16,12 @@ class UnitConversion(BaseModel):
 
     from_unit_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("units.id", ondelete="RESTRICT"),
+        ForeignKey("inventory_units.id", ondelete="RESTRICT"),
         nullable=False,
     )
     to_unit_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("units.id", ondelete="RESTRICT"),
+        ForeignKey("inventory_units.id", ondelete="RESTRICT"),
         nullable=False,
     )
     multiplier: Mapped[Decimal] = mapped_column(
@@ -29,8 +29,8 @@ class UnitConversion(BaseModel):
         nullable=False,
     )
 
-    from_unit: Mapped[Unit] = relationship("Unit", foreign_keys=[from_unit_id], lazy="joined")
-    to_unit: Mapped[Unit] = relationship("Unit", foreign_keys=[to_unit_id], lazy="joined")
+    from_unit: Mapped[InventoryUnit] = relationship("InventoryUnit", foreign_keys=[from_unit_id], lazy="joined")
+    to_unit: Mapped[InventoryUnit] = relationship("InventoryUnit", foreign_keys=[to_unit_id], lazy="joined")
 
     __table_args__ = (
         UniqueConstraint(

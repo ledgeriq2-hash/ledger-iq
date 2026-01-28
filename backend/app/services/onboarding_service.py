@@ -4,10 +4,13 @@ from datetime import date
 from typing import Any
 from uuid import UUID
 
+from decimal import Decimal
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.tenant import Tenant
+from app.models.unit import InventoryUnit
 from app.services import customer_service, invoice_service, payment_service, product_service
 
 
@@ -78,10 +81,17 @@ async def create_sample_data(session: AsyncSession, tenant_id: UUID) -> dict[str
         tenant_id,
         {"code": "SAMPLE", "name": "Sample Customer", "email": "sample@ledger.test", "phone": "555-0101"},
     )
+    base_unit = await _ensure_base_unit(session, tenant_id)
     product = await product_service.create_product(
         session,
         tenant_id,
-        {"name": "Starter Package", "sku": "START-01", "unit_price": "199.00", "is_service": True},
+        {
+            "name": "Starter Package",
+            "sku": "START-01",
+            "unit_price": "199.00",
+            "is_service": True,
+            "base_unit_id": base_unit.id,
+        },
     )
     today = date.today()
     invoice = await invoice_service.create_invoice(
@@ -106,6 +116,28 @@ async def create_sample_data(session: AsyncSession, tenant_id: UUID) -> dict[str
 
     updated = await update_status(session, tenant_id, {"sample_data_loaded": True})
     return updated
+
+
+async def _ensure_base_unit(session: AsyncSession, tenant_id: UUID) -> InventoryUnit:
+    result = await session.execute(
+        select(InventoryUnit)
+        .where(InventoryUnit.tenant_id == tenant_id)
+        .order_by(InventoryUnit.created_at.asc())
+    )
+    unit = result.scalars().first()
+    if unit:
+        return unit
+    unit = InventoryUnit(
+        tenant_id=tenant_id,
+        code="EA",
+        name="Each",
+        ratio_to_base=Decimal("1"),
+        is_base=True,
+    )
+    session.add(unit)
+    await session.commit()
+    await session.refresh(unit)
+    return unit
 
 
 __all__ = ["get_status", "update_status", "create_sample_data"]
