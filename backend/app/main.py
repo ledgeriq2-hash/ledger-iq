@@ -58,7 +58,7 @@ from app.core.soft_launch import refresh_soft_launch_slugs
 from app.database import async_session_maker
 from app.metrics import setup_metrics
 from app.middleware import register_middlewares
-from app.shared.errors import ErrorResponse
+from app.shared.errors import ErrorEnvelope, ErrorObject, ErrorResponse
 from app.core.exceptions import json_error_response
 
 
@@ -180,6 +180,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title=settings.app_name,
+    version=getattr(settings, "app_version", "0.0.0"),
     debug=settings.debug,
     lifespan=lifespan,
     generate_unique_id_function=lambda route: f"{sorted(getattr(route, 'methods', {'GET'}))[0].lower()}_{getattr(route, 'path_format', '').lstrip('/').replace('/', '_').replace('-', '_').replace('{', '').replace('}', '')}",
@@ -206,10 +207,13 @@ def _custom_openapi():
         "BearerAuth",
         {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"},
     )
+    schemas["ErrorObject"] = ErrorObject.model_json_schema(ref_template="#/components/schemas/{model}")
+    schemas["ErrorEnvelope"] = ErrorEnvelope.model_json_schema(ref_template="#/components/schemas/{model}")
     schemas["ErrorResponse"] = ErrorResponse.model_json_schema(ref_template="#/components/schemas/{model}")
 
-    error_ref = {"$ref": "#/components/schemas/ErrorResponse"}
+    error_ref = {"$ref": "#/components/schemas/ErrorEnvelope"}
     error_content = {"application/json": {"schema": error_ref}}
+    error_headers = {"X-Request-ID": {"schema": {"type": "string"}}}
     for path_item in (schema.get("paths") or {}).values():
         if not isinstance(path_item, dict):
             continue
@@ -218,7 +222,27 @@ def _custom_openapi():
                 continue
             responses = operation.setdefault("responses", {})
             for status_code in ("400", "401", "403", "404", "409", "422", "500"):
-                responses[status_code] = {"description": "Error", "content": error_content}
+                responses[status_code] = {
+                    "description": "Error",
+                    "content": error_content,
+                    "headers": error_headers,
+                }
+
+    health_headers = {"X-Request-ID": {"schema": {"type": "string"}}}
+    healthz = schema.get("paths", {}).get("/healthz", {}).get("get")
+    if isinstance(healthz, dict):
+        responses = healthz.setdefault("responses", {})
+        responses.setdefault("200", {}).setdefault("headers", health_headers)
+        healthz.setdefault("summary", "Health check")
+        healthz.setdefault("tags", ["health"])
+
+    readyz = schema.get("paths", {}).get("/readyz", {}).get("get")
+    if isinstance(readyz, dict):
+        responses = readyz.setdefault("responses", {})
+        responses.setdefault("200", {}).setdefault("headers", health_headers)
+        responses.setdefault("503", {"description": "Service unavailable", "content": error_content, "headers": error_headers})
+        readyz.setdefault("summary", "Readiness check")
+        readyz.setdefault("tags", ["health"])
 
     app.openapi_schema = schema
     return app.openapi_schema
@@ -278,7 +302,7 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/healthz", tags=["health"])
+@app.get("/healthz", tags=["health"], summary="Health check")
 async def healthz() -> dict[str, str]:
     return {"status": "ok"}
 
@@ -312,7 +336,7 @@ async def health_db():
     return {"status": "ok"}
 
 
-@app.get("/readyz", tags=["health"])
+@app.get("/readyz", tags=["health"], summary="Readiness check")
 async def readyz():
     postgres_ready = await _db_check("readyz.postgres.failed")
     redis_ready = await _redis_check("readyz.redis.failed")

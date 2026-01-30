@@ -5,15 +5,23 @@ from typing import Any
 from pydantic import BaseModel
 
 
-class ErrorDetail(BaseModel):
+class ErrorObject(BaseModel):
     code: str
     message: str
     details: Any | None = None
 
 
-class ErrorResponse(BaseModel):
-    error: ErrorDetail
+class ErrorEnvelope(BaseModel):
+    error: ErrorObject
     request_id: str | None = None
+
+
+class ErrorDetail(ErrorObject):
+    """Backward-compatible alias for ErrorObject."""
+
+
+class ErrorResponse(ErrorEnvelope):
+    """Backward-compatible alias for ErrorEnvelope."""
 
 
 def error_shape(
@@ -33,4 +41,10 @@ def error_shape(
     }
 
 
-__all__ = ["ErrorResponse", "ErrorDetail", "error_shape"]
+__all__ = [
+    "ErrorObject",
+    "ErrorEnvelope",
+    "ErrorResponse",
+    "ErrorDetail",
+    "error_shape",
+]
