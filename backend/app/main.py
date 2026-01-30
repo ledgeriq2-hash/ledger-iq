@@ -58,6 +58,7 @@ from app.core.soft_launch import refresh_soft_launch_slugs
 from app.database import async_session_maker
 from app.metrics import setup_metrics
 from app.middleware import register_middlewares
+from app.middleware.request_id import RequestIdASGIMiddleware
 from app.shared.errors import ErrorEnvelope, ErrorObject, ErrorResponse
 from app.core.exceptions import json_error_response
 
@@ -189,7 +190,7 @@ async def lifespan(app: FastAPI):
             await redis_client.close()
 
 
-app = FastAPI(
+fastapi_app = FastAPI(
     title=settings.app_name,
     version=getattr(settings, "app_version", "0.0.0"),
     debug=settings.debug,
@@ -197,19 +198,19 @@ app = FastAPI(
     generate_unique_id_function=lambda route: f"{sorted(getattr(route, 'methods', {'GET'}))[0].lower()}_{getattr(route, 'path_format', '').lstrip('/').replace('/', '_').replace('-', '_').replace('{', '').replace('}', '')}",
 )
 
-app.add_middleware(CSRFMiddleware, settings=settings)
-setup_metrics(app)
-register_middlewares(app, settings)
-register_exception_handlers(app)
+fastapi_app.add_middleware(CSRFMiddleware, settings=settings)
+setup_metrics(fastapi_app)
+register_middlewares(fastapi_app, settings)
+register_exception_handlers(fastapi_app)
 
 def _custom_openapi():
-    if app.openapi_schema:
-        return app.openapi_schema
+    if fastapi_app.openapi_schema:
+        return fastapi_app.openapi_schema
     schema = get_openapi(
-        title=app.title,
+        title=fastapi_app.title,
         version=getattr(settings, "app_version", "0.0.0"),
-        routes=app.routes,
-        description=getattr(app, "description", None),
+        routes=fastapi_app.routes,
+        description=getattr(fastapi_app, "description", None),
     )
     components = schema.setdefault("components", {})
     schemas = components.setdefault("schemas", {})
@@ -255,15 +256,15 @@ def _custom_openapi():
         readyz.setdefault("summary", "Readiness check")
         readyz.setdefault("tags", ["health"])
 
-    app.openapi_schema = schema
-    return app.openapi_schema
+    fastapi_app.openapi_schema = schema
+    return fastapi_app.openapi_schema
 
 
-app.openapi = _custom_openapi  # type: ignore[assignment]
+fastapi_app.openapi = _custom_openapi  # type: ignore[assignment]
 
 
 if settings.backend_cors_origins:
-    app.add_middleware(
+    fastapi_app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.backend_cors_origins,
         allow_credentials=True,
@@ -272,7 +273,7 @@ if settings.backend_cors_origins:
     )
 
 api_router = _load_api_router()
-app.include_router(api_router)
+fastapi_app.include_router(api_router)
 
 
 async def _db_check(log_label: str) -> bool:
@@ -308,22 +309,22 @@ async def _redis_check(log_label: str) -> bool:
     return True
 
 
-@app.get("/health", tags=["health"])
+@fastapi_app.get("/health", tags=["health"])
 async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/healthz", tags=["health"], summary="Health check")
+@fastapi_app.get("/healthz", tags=["health"], summary="Health check")
 async def healthz() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/health/live", tags=["health"])
+@fastapi_app.get("/health/live", tags=["health"])
 async def health_live() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/health/ready", tags=["health"])
+@fastapi_app.get("/health/ready", tags=["health"])
 async def health_ready():
     if not await _db_check("readiness.failed"):
         return json_error_response(
@@ -335,7 +336,7 @@ async def health_ready():
     return {"status": "ok"}
 
 
-@app.get("/health/db", tags=["health"])
+@fastapi_app.get("/health/db", tags=["health"])
 async def health_db():
     if not await _db_check("health.db.failed"):
         return json_error_response(
@@ -347,7 +348,7 @@ async def health_db():
     return {"status": "ok"}
 
 
-@app.get("/readyz", tags=["health"], summary="Readiness check")
+@fastapi_app.get("/readyz", tags=["health"], summary="Readiness check")
 async def readyz():
     postgres_ready = await _db_check("readyz.postgres.failed")
     redis_ready = await _redis_check("readyz.redis.failed")
@@ -361,4 +362,6 @@ async def readyz():
     return {"status": "ok"}
 
 
-__all__ = ["app"]
+app = RequestIdASGIMiddleware(fastapi_app)
+
+__all__ = ["app", "fastapi_app"]

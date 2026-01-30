@@ -15,7 +15,7 @@ const isUuid = (value) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9
 const TenantSelect = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { setTenantId } = useAuth();
+  const { tenantId, setTenantId } = useAuth();
 
   const existingTenantId = useMemo(() => getTenantId(), []);
   const [tenantIdInput, setTenantIdInput] = useState(existingTenantId || "");
@@ -23,8 +23,8 @@ const TenantSelect = () => {
   const [tenants, setTenants] = useState([]);
 
   useEffect(() => {
-    if (existingTenantId) navigate("/dashboard", { replace: true });
-  }, [existingTenantId, navigate]);
+    if (tenantId || existingTenantId) navigate("/dashboard", { replace: true });
+  }, [tenantId, existingTenantId, navigate]);
 
   useEffect(() => {
     let active = true;

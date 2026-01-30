@@ -1,6 +1,6 @@
-import React, { createContext, useMemo, useState } from "react";
+import React, { createContext, useCallback, useEffect, useMemo, useState } from "react";
 import authApi from "../api/authApi.js";
-import { ACCESS_TOKEN_STORAGE_KEY } from "../api/index";
+import axiosClient, { ACCESS_TOKEN_STORAGE_KEY } from "../api/index";
 
 const loadStored = (key) => (typeof window !== "undefined" ? localStorage.getItem(key) : null);
 
@@ -70,23 +70,57 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const setTenantId = (value) => {
+  const setTenantId = useCallback((value) => {
     const next = value || null;
     setTenantIdState(next);
     if (typeof window !== "undefined") {
       if (next) localStorage.setItem("tenant_id", next);
       else localStorage.removeItem("tenant_id");
     }
-  };
+  }, []);
 
-  const setActorId = (value) => {
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let active = true;
+    const envTenantId = import.meta.env.VITE_TENANT_ID;
+    axiosClient
+      .request({
+        method: "GET",
+        url: "/v1/dev/tenants",
+        skipTenant: true,
+        skipAuth: true,
+      })
+      .then((res) => {
+        if (!active || envTenantId) return;
+        const items = Array.isArray(res?.data?.items) ? res.data.items : [];
+        const current = loadStored("tenant_id");
+        const isCurrentValid = current && items.some((tenantItem) => tenantItem.id === current);
+        if (isCurrentValid) {
+          setTenantId(current);
+          return;
+        }
+        if (items.length === 1) {
+          setTenantId(items[0].id);
+          return;
+        }
+        if (current && !isCurrentValid) {
+          setTenantId(null);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [setTenantId]);
+
+  const setActorId = useCallback((value) => {
     const next = value || null;
     setActorIdState(next);
     if (typeof window !== "undefined") {
       if (next) localStorage.setItem("actor_id", next);
       else localStorage.removeItem("actor_id");
     }
-  };
+  }, []);
 
   const login = async (credentials) => {
     setLoading(true);
