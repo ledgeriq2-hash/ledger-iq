@@ -187,7 +187,7 @@ app = FastAPI(
 
 app.add_middleware(CSRFMiddleware, settings=settings)
 setup_metrics(app)
-register_middlewares(app)
+register_middlewares(app, settings)
 register_exception_handlers(app)
 
 def _custom_openapi():

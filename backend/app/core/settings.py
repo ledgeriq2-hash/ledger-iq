@@ -7,7 +7,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from pydantic import EmailStr, Field, field_validator, model_validator
+from pydantic import AliasChoices, EmailStr, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 
@@ -85,7 +85,10 @@ class Settings(BaseSettings):
         ]
     )
 
-    backend_cors_origins: list[str] = Field(default_factory=list)
+    backend_cors_origins: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("BACKEND_CORS_ORIGINS", "CORS_ORIGINS"),
+    )
     sentry_dsn: str | None = None
 
     soft_launch_enabled: bool = False
@@ -202,6 +205,15 @@ class Settings(BaseSettings):
                 object.__setattr__(self, "jwt_secret_key", DEV_JWT_SECRET_FALLBACK)
             if not self.jwt_refresh_secret_key:
                 object.__setattr__(self, "jwt_refresh_secret_key", DEV_JWT_REFRESH_SECRET_FALLBACK)
+            if not self.backend_cors_origins:
+                object.__setattr__(
+                    self,
+                    "backend_cors_origins",
+                    [
+                        "http://localhost:5173",
+                        "http://127.0.0.1:5173",
+                    ],
+                )
             return self
         object.__setattr__(self, "refresh_cookie_secure", True)
 
