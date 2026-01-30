@@ -12,8 +12,8 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         self.settings = settings
 
     def _is_production(self) -> bool:
-        env = str(getattr(self.settings, "environment", "production") or "production").strip().lower()
-        return env in {"production", "prod"}
+        env = str(getattr(self.settings, "environment", "development") or "development").strip().lower()
+        return env == "production"
 
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)

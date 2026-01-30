@@ -35,8 +35,8 @@ async def get_redis():
 
 
 def _is_dev_runtime(settings) -> bool:
-    env = str(getattr(settings, "environment", "production") or "production").strip().lower()
-    return env in {"development", "dev", "local"}
+    env = str(getattr(settings, "environment", "development") or "development").strip().lower()
+    return env == "development"
 
 
 @dataclass(frozen=True, slots=True)

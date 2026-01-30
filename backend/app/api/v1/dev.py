@@ -32,8 +32,8 @@ class DevTenantListResponse(BaseSchema):
 
 
 def _ensure_dev(settings) -> None:
-    env = str(getattr(settings, "environment", "production") or "production").strip().lower()
-    if env not in {"development", "dev", "local"}:
+    env = str(getattr(settings, "environment", "development") or "development").strip().lower()
+    if env != "development":
         raise AppException(
             code="dev_not_enabled",
             message="Dev endpoints are not enabled in this environment.",

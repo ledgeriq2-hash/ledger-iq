@@ -23,7 +23,7 @@ def _resolve_env_file() -> str | None:
 
     Production relies solely on process environment variables.
     """
-    environment = os.getenv("ENVIRONMENT", "production").lower()
+    environment = os.getenv("ENVIRONMENT", "development").lower()
     if environment not in {"development", "test"}:
         return None
 
@@ -56,7 +56,7 @@ class Settings(BaseSettings):
     )
 
     app_name: str = "Ledger IQ"
-    environment: str = "production"
+    environment: str = "development"
     debug: bool = False
     log_level: str = "INFO"
 
@@ -89,6 +89,7 @@ class Settings(BaseSettings):
         default_factory=list,
         validation_alias=AliasChoices("BACKEND_CORS_ORIGINS", "CORS_ORIGINS"),
     )
+    allow_wildcard_cors: bool = False
     sentry_dsn: str | None = None
 
     soft_launch_enabled: bool = False
@@ -130,6 +131,15 @@ class Settings(BaseSettings):
         if value is None or str(value).strip() == "":
             return "INFO"
         return str(value).strip().upper()
+
+    @field_validator("environment", mode="before")
+    @classmethod
+    def validate_environment(cls, value: Any) -> str:
+        env = str(value or "development").strip().lower()
+        allowed = {"development", "staging", "production"}
+        if env not in allowed:
+            raise ValueError("ENVIRONMENT must be one of: development, staging, production")
+        return env
 
     @field_validator("csrf_enabled", mode="before")
     @classmethod
@@ -196,8 +206,8 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def enforce_guardrails(self) -> "Settings":
         """Require critical secrets in production and keep safe defaults elsewhere."""
-        env = (self.environment or "production").strip().lower()
-        is_production = env in {"production", "prod"}
+        env = (self.environment or "development").strip().lower()
+        is_production = env in {"production", "staging"}
         if not is_production:
             if not self.database_url or not str(self.database_url).strip():
                 object.__setattr__(self, "database_url", DEV_DATABASE_URL)
@@ -237,6 +247,9 @@ class Settings(BaseSettings):
         if self.billing_enabled:
             require(self.stripe_api_key, "STRIPE_API_KEY")
             require(self.stripe_webhook_secret, "STRIPE_WEBHOOK_SECRET")
+
+        if self.backend_cors_origins and "*" in self.backend_cors_origins and not self.allow_wildcard_cors:
+            invalid.append("CORS_ORIGINS must not contain '*' in production unless ALLOW_WILDCARD_CORS=true")
 
         if missing or invalid:
             parts = []

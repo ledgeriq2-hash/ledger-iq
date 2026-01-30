@@ -86,8 +86,8 @@ def ensure_refresh_token_type(decoded: dict[str, object]) -> None:
 
 def cookie_params(settings):
     secure = bool(getattr(settings, "refresh_cookie_secure", False)) or str(
-        getattr(settings, "environment", "production")
-    ).lower() in {"production", "prod"}
+        getattr(settings, "environment", "development")
+    ).lower() in {"production", "staging"}
     samesite = (getattr(settings, "refresh_cookie_samesite", "lax") or "lax").lower()
     if samesite not in {"lax", "strict", "none"}:
         samesite = "lax"

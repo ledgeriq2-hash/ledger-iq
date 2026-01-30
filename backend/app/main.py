@@ -87,12 +87,12 @@ class CSRFMiddleware(BaseHTTPMiddleware):
         return lower_path in self.exempt_paths
 
     def _is_dev_runtime(self) -> bool:
-        env = str(getattr(self.settings, "environment", "production") or "production").strip().lower()
-        if env in {"production", "prod"}:
+        env = str(getattr(self.settings, "environment", "development") or "development").strip().lower()
+        if env in {"production", "staging"}:
             return False
         if bool(getattr(self.settings, "debug", False)):
             return True
-        return env in {"development", "dev", "local", "test"}
+        return env == "development"
 
     def _should_bypass_for_dev_ai(self, request: Request) -> bool:
         if not self._is_dev_runtime():
@@ -160,6 +160,17 @@ def _load_api_router() -> APIRouter:
 async def lifespan(app: FastAPI):
     init_logging(settings.debug, settings.log_level)
     app.state.settings = settings
+    try:
+        cors_count = len(getattr(settings, "backend_cors_origins", []) or [])
+    except Exception:
+        cors_count = 0
+    logger.info(
+        "startup.config",
+        extra={
+            "environment": getattr(settings, "environment", "unknown"),
+            "cors_origin_count": cors_count,
+        },
+    )
 
     redis_client = None
     try:
