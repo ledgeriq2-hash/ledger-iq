@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import os
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -33,12 +34,11 @@ class DevTenantListResponse(BaseSchema):
 
 def _ensure_dev(settings) -> None:
     env = str(getattr(settings, "environment", "development") or "development").strip().lower()
-    if env != "development":
-        raise AppException(
-            code="dev_not_enabled",
-            message="Dev endpoints are not enabled in this environment.",
-            http_status=status.HTTP_404_NOT_FOUND,
-        )
+    app_env = str(os.getenv("APP_ENV", "")).strip().lower()
+    allow_flag = os.getenv("LEDGERIQ_ALLOW_DEV_ENDPOINTS") == "1"
+    if env == "development" or app_env == "dev" or allow_flag:
+        return
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Dev endpoints are not enabled")
 
 
 @router.get("/info", response_model=DevInfo)
@@ -85,6 +85,12 @@ async def reset_cache(
         message="Dev utilities are not enabled in this environment.",
         http_status=status.HTTP_501_NOT_IMPLEMENTED,
     )
+
+
+@router.get("/trigger-500", status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+async def trigger_server_error(settings=Depends(deps.get_settings)):
+    _ensure_dev(settings)
+    raise RuntimeError("triggered")
 
 
 __all__ = ["router"]

@@ -31,6 +31,7 @@ class TenantMiddleware(BaseHTTPMiddleware):
             "/redoc",
             "/api/v1/dev/tenants",
             "/api/v1/dev/runs/lineage",
+            "/api/v1/dev/trigger-500",
         }
 
         if is_api_path and not is_exempt and not is_portal_public:
