@@ -186,12 +186,22 @@ async def portal_invoices(
     session: AsyncSession = Depends(deps.get_db),
     settings=Depends(deps.get_settings),
     pagination: PaginationParams = Depends(pagination_params),
+    status_filter: str | None = Query(None, alias="status", description="all|open|paid|overdue"),
+    q: str | None = Query(None, description="Search by invoice number/reference"),
+    sort: str | None = Query(None, description="newest|oldest"),
 ) -> PortalInvoicesResponse:
     await portal_rate_limit(request, settings)
     _, _, portal_token = await validate_portal_token_or_error(
         session, token, expected_type=PortalEntityType.CUSTOMER
     )
-    return await portal_invoices_response(session, portal_token, pagination)
+    return await portal_invoices_response(
+        session,
+        portal_token,
+        pagination,
+        status_filter=status_filter,
+        search=q,
+        sort=sort,
+    )
 
 
 @router.get("/{token}/payments", response_model=PortalPaymentsResponse)

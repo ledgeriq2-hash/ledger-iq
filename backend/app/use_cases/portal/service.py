@@ -6,7 +6,8 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import Request, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
+from sqlalchemy import cast, String
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.accounting.use_cases.generate_client_statement import generate_client_statement
@@ -212,15 +213,85 @@ async def portal_summary_response(session: AsyncSession, portal_token, settings:
     return PortalSummaryResponse(client=customer_model, recent_activity=recent_activity, stats=stats)
 
 
+def _normalize_invoice_filter(value: str | None) -> str | None:
+    if not value:
+        return None
+    normalized = value.strip().lower()
+    if normalized in {"all", "open", "paid", "overdue"}:
+        return normalized
+    for status in InvoiceStatus:
+        if normalized == status.value.lower():
+            return status.value
+    raise AppException(
+        code="portal_invoice_filter_invalid",
+        message="Invalid status filter",
+        http_status=status.HTTP_400_BAD_REQUEST,
+    )
+
+
+def _normalize_sort(value: str | None) -> str:
+    if not value:
+        return "newest"
+    normalized = value.strip().lower()
+    if normalized in {"newest", "oldest"}:
+        return normalized
+    raise AppException(
+        code="portal_invoice_sort_invalid",
+        message="Invalid sort option",
+        http_status=status.HTTP_400_BAD_REQUEST,
+    )
+
+
 async def portal_invoices_response(
-    session: AsyncSession, portal_token, params: PaginationParams
+    session: AsyncSession,
+    portal_token,
+    params: PaginationParams,
+    *,
+    status_filter: str | None = None,
+    search: str | None = None,
+    sort: str | None = None,
 ) -> PortalInvoicesResponse:
     await _ensure_customer_exists(session, portal_token.tenant_id, portal_token.entity_id)
     statement = select(Invoice).where(
         Invoice.tenant_id == portal_token.tenant_id,
         Invoice.customer_id == portal_token.entity_id,
-        Invoice.status.notin_([InvoiceStatus.PAID, InvoiceStatus.CANCELLED]),
     )
+
+    normalized_status = _normalize_invoice_filter(status_filter)
+    if normalized_status == "open":
+        statement = statement.where(Invoice.status.notin_([InvoiceStatus.PAID, InvoiceStatus.CANCELLED]))
+    elif normalized_status == "paid":
+        statement = statement.where(Invoice.status == InvoiceStatus.PAID)
+    elif normalized_status == "overdue":
+        today = date.today()
+        statement = statement.where(
+            or_(
+                Invoice.status == InvoiceStatus.OVERDUE,
+                (Invoice.due_date.is_not(None))
+                & (Invoice.due_date < today)
+                & (Invoice.status.notin_([InvoiceStatus.PAID, InvoiceStatus.CANCELLED])),
+            )
+        )
+    elif normalized_status and normalized_status != "all":
+        statement = statement.where(Invoice.status == InvoiceStatus(normalized_status))
+
+    if search:
+        term = search.strip()
+        if term:
+            pattern = f"%{term}%"
+            statement = statement.where(
+                or_(
+                    cast(Invoice.id, String).ilike(pattern),
+                    Invoice.notes.ilike(pattern),
+                )
+            )
+
+    sort_order = _normalize_sort(sort)
+    if sort_order == "oldest":
+        statement = statement.order_by(Invoice.created_at.asc())
+    else:
+        statement = statement.order_by(Invoice.created_at.desc())
+
     invoices, total = await paginate_query(session, statement, params)
     invoice_models = [InvoicePublic.model_validate(inv) for inv in invoices]
     return PortalInvoicesResponse.from_results(items=invoice_models, total=total, params=params)
