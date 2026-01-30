@@ -83,6 +83,12 @@ export const AuthProvider = ({ children }) => {
     if (typeof window === "undefined") return;
     let active = true;
     const envTenantId = import.meta.env.VITE_TENANT_ID;
+    if (envTenantId) {
+      setTenantId(envTenantId);
+      return () => {
+        active = false;
+      };
+    }
     axiosClient
       .request({
         method: "GET",
@@ -91,13 +97,26 @@ export const AuthProvider = ({ children }) => {
         skipAuth: true,
       })
       .then((res) => {
-        if (!active || envTenantId) return;
+        if (!active) return;
         const items = Array.isArray(res?.data?.items) ? res.data.items : [];
         const current = loadStored("tenant_id");
+        const legacySlug = loadStored("tenant_slug");
         const isCurrentValid = current && items.some((tenantItem) => tenantItem.id === current);
         if (isCurrentValid) {
           setTenantId(current);
+          if (legacySlug) {
+            localStorage.removeItem("tenant_slug");
+          }
           return;
+        }
+        if (legacySlug) {
+          const matched = items.find((tenantItem) => tenantItem.slug === legacySlug);
+          if (matched) {
+            setTenantId(matched.id);
+            localStorage.removeItem("tenant_slug");
+            return;
+          }
+          localStorage.removeItem("tenant_slug");
         }
         if (items.length === 1) {
           setTenantId(items[0].id);
