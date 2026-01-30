@@ -7,8 +7,8 @@ const Modal = ({ open, title, onClose, children, actions }) => {
   if (!open) return null;
 
   return (
-    <div className="kit-modalOverlay" role="dialog" aria-modal="true">
-      <div className="kit-modal">
+    <div className="modalOverlay" role="dialog" aria-modal="true">
+      <div className="modalCard">
         <Card
           title={title}
           headerRight={
@@ -18,7 +18,7 @@ const Modal = ({ open, title, onClose, children, actions }) => {
           }
         >
           {children}
-          {actions ? <div className="dashboardNav">{actions}</div> : null}
+          {actions ? <div className="modalActions">{actions}</div> : null}
         </Card>
       </div>
     </div>

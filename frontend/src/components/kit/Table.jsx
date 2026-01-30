@@ -12,7 +12,7 @@ const Table = ({ columns = [], rows = [], keyField = "id" }) => {
       </thead>
       <tbody>
         {rows.map((row, idx) => (
-          <tr key={row?.[keyField] || idx}>
+          <tr key={row?.[keyField] || idx} className="kit-tableRow">
             {columns.map((c) => (
               <td key={c.key}>{typeof c.render === "function" ? c.render(row) : row?.[c.key]}</td>
             ))}

@@ -6,18 +6,6 @@ import { getPortalToken, setPortalToken } from "../../utils/portalTokens.js";
 import Card from "../../components/ui/Card.jsx";
 import Banner from "../../components/ui/Banner.jsx";
 import ErrorState from "../../components/ui/ErrorState.jsx";
-import colors from "../../design/colors.js";
-import spacing from "../../design/spacing.js";
-
-const navStyle = (isActive) => ({
-  padding: "0.55rem 0.85rem",
-  borderRadius: "10px",
-  textDecoration: "none",
-  color: isActive ? colors.primary : colors.text,
-  background: isActive ? "color-mix(in srgb, var(--color-primary) 12%, transparent)" : "transparent",
-  fontWeight: 600,
-  border: isActive ? `1px solid ${colors.primary}` : `1px solid transparent`,
-});
 
 const CustomerPortal = () => {
   const { token } = useParams();
@@ -54,40 +42,26 @@ const CustomerPortal = () => {
   const base = ".";
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background:
-          "linear-gradient(135deg, color-mix(in srgb, var(--color-secondary) 18%, transparent), var(--color-bg))",
-        padding: "1rem",
-        color: "var(--color-text)",
-      }}
-      data-testid="customer-portal"
-    >
-      <div style={{ maxWidth: "1080px", margin: "0 auto", display: "grid", gap: "1rem" }}>
-        <Card
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            borderRadius: "14px",
-          }}
-        >
+    <div className="portalPage" data-testid="customer-portal">
+      <div className="kit-container portalGrid">
+        <Card className="portalNavCard">
           <div>
-            <h2 style={{ margin: 0, color: colors.text }}>Customer Portal</h2>
-            <p style={{ margin: 0, color: colors.textMuted, fontSize: "0.95rem" }}>Secure link access</p>
+            <h2 className="portalSectionTitle">Customer Portal</h2>
+            <p className="kit-muted" style={{ margin: 0 }}>
+              Secure link access
+            </p>
           </div>
-          <nav style={{ display: "flex", gap: spacing.sm, flexWrap: "wrap" }}>
-            <NavLink to={`${base}`} end style={({ isActive }) => navStyle(isActive)}>
+          <nav className="portalTabs">
+            <NavLink to={`${base}`} end className={({ isActive }) => `portalTab ${isActive ? "isActive" : ""}`}>
               Overview
             </NavLink>
-            <NavLink to={`${base}/invoices`} style={({ isActive }) => navStyle(isActive)}>
+            <NavLink to={`${base}/invoices`} className={({ isActive }) => `portalTab ${isActive ? "isActive" : ""}`}>
               Invoices
             </NavLink>
-            <NavLink to={`${base}/payments`} style={({ isActive }) => navStyle(isActive)}>
+            <NavLink to={`${base}/payments`} className={({ isActive }) => `portalTab ${isActive ? "isActive" : ""}`}>
               Payments
             </NavLink>
-            <NavLink to={`${base}/settings`} style={({ isActive }) => navStyle(isActive)}>
+            <NavLink to={`${base}/settings`} className={({ isActive }) => `portalTab ${isActive ? "isActive" : ""}`}>
               Settings
             </NavLink>
           </nav>

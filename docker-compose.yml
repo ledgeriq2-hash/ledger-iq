@@ -82,7 +82,7 @@ services:
       - /bin/sh
       - -c
       - |
-        if [ ! -d node_modules ]; then
+        if [ ! -d node_modules ] || [ ! -f node_modules/.bin/vite ]; then
           npm ci
         fi
         npm run dev -- --host 0.0.0.0 --port 5173
@@ -92,13 +92,7 @@ services:
       backend:
         condition: service_healthy
     healthcheck:
-      test:
-        [
-          "CMD",
-          "node",
-          "-e",
-          "fetch('http://localhost:5173').then(r=>{if(!r.ok) throw new Error('bad')}).then(()=>process.exit(0)).catch(()=>process.exit(1))",
-        ]
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:5173/ >/dev/null 2>&1 || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 30

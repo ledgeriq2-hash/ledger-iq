@@ -1,6 +1,8 @@
 import React from "react";
 import { useOutletContext } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import StatusPill from "../../../components/kit/StatusPill.jsx";
+import Banner from "../../../components/ui/Banner.jsx";
 
 const SupplierOrders = () => {
   const { t } = useTranslation();
@@ -11,37 +13,27 @@ const SupplierOrders = () => {
   const orders = portalData.orders || [];
 
   return (
-    <div style={{ display: "grid", gap: "1rem" }}>
-      <h2 style={{ marginTop: 0 }}>{t("nav.invoices", { defaultValue: "Orders" })}</h2>
-      <div className="card" style={{ display: "grid", gap: "0.75rem" }}>
-        {orders.length === 0 && (
-          <p style={{ margin: 0, color: "var(--color-muted)" }}>
-            {t("status.noData", { defaultValue: "No data available" })}
-          </p>
+    <div className="portalGrid">
+      <h2 className="portalSectionTitle">{t("nav.invoices", { defaultValue: "Orders" })}</h2>
+      <div className="kit-card portalList">
+        {orders.length === 0 ? (
+          <Banner variant="info" message={t("status.noData", { defaultValue: "No data available" })} />
+        ) : (
+          orders.map((order) => (
+            <div key={order.id || order.reference} className="portalListItem">
+              <div className="portalListHeader">
+                <div style={{ fontWeight: 700 }}>{order.reference || order.id}</div>
+                <StatusPill tone="info">{order.status || "OPEN"}</StatusPill>
+              </div>
+              <div className="portalMetaRow">
+                {t("status.success", { defaultValue: "Total" })}: {order.total_amount || order.total || "-"}
+              </div>
+              <div className="portalMetaRow">
+                {t("nav.customers", { defaultValue: "Customers" })}: {order.customer_name || "-"}
+              </div>
+            </div>
+          ))
         )}
-        {orders.map((order) => (
-          <div
-            key={order.id || order.reference}
-            style={{
-              padding: "0.75rem",
-              border: "1px solid var(--color-border)",
-              borderRadius: "10px",
-              display: "grid",
-              gap: "0.35rem",
-            }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div style={{ fontWeight: 700 }}>{order.reference || order.id}</div>
-              <span style={{ color: "var(--color-muted)" }}>{order.status || "OPEN"}</span>
-            </div>
-            <div style={{ color: "var(--color-muted)" }}>
-              {t("status.success", { defaultValue: "Total" })}: {order.total_amount || order.total || "-"}
-            </div>
-            <div style={{ color: "var(--color-muted)", fontSize: "0.95rem" }}>
-              {t("nav.customers", { defaultValue: "Customers" })}: {order.customer_name || "-"}
-            </div>
-          </div>
-        ))}
       </div>
     </div>
   );

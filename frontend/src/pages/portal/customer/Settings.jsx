@@ -16,29 +16,21 @@ const CustomerSettings = () => {
   const balanceDisplay = balance ? `${balance.balance} (${balance.as_of_date})` : t("status.loading", { defaultValue: "Loading..." });
 
   return (
-    <div style={{ display: "grid", gap: "1rem", maxWidth: "520px" }}>
-      <h2 style={{ marginTop: 0 }}>{t("nav.settings", { defaultValue: "Settings" })}</h2>
+    <div className="portalGrid" style={{ maxWidth: "520px" }}>
+      <h2 className="portalSectionTitle">{t("nav.settings", { defaultValue: "Settings" })}</h2>
       <Card title={t("nav.settings", { defaultValue: "Settings" })} subtitle="Read-only portal view">
-        <div style={{ display: "grid", gap: "0.6rem" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem" }}>
-            <span style={{ color: "var(--color-muted)", fontWeight: 700 }}>
-              {t("portal.stats.openInvoices", { defaultValue: "Open invoices" })}
-            </span>
-            <span style={{ color: "var(--color-text)", fontWeight: 700 }}>{stats.open_invoices ?? 0}</span>
+        <div className="kit-form">
+          <div className="portalListHeader">
+            <span className="kit-muted">{t("portal.stats.openInvoices", { defaultValue: "Open invoices" })}</span>
+            <span style={{ fontWeight: 700 }}>{stats.open_invoices ?? 0}</span>
           </div>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem" }}>
-            <span style={{ color: "var(--color-muted)", fontWeight: 700 }}>
-              {t("portal.stats.totalOpenAmount", { defaultValue: "Total outstanding" })}
-            </span>
-            <span style={{ color: "var(--color-text)", fontWeight: 700 }}>
-              {stats.total_open_amount ?? 0}
-            </span>
+          <div className="portalListHeader">
+            <span className="kit-muted">{t("portal.stats.totalOpenAmount", { defaultValue: "Total outstanding" })}</span>
+            <span style={{ fontWeight: 700 }}>{stats.total_open_amount ?? 0}</span>
           </div>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem" }}>
-            <span style={{ color: "var(--color-muted)", fontWeight: 700 }}>
-              {t("portal.balance", { defaultValue: "Current balance" })}
-            </span>
-            <span style={{ color: "var(--color-text)", fontWeight: 700 }}>{balanceDisplay}</span>
+          <div className="portalListHeader">
+            <span className="kit-muted">{t("portal.balance", { defaultValue: "Current balance" })}</span>
+            <span style={{ fontWeight: 700 }}>{balanceDisplay}</span>
           </div>
         </div>
       </Card>

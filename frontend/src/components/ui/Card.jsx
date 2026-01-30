@@ -7,7 +7,7 @@ const Card = ({ title, subtitle, actions, children, className = "" }) => {
         <div className="kit-cardHeader">
           <div>
             {title && <h3 className="kit-cardTitle">{title}</h3>}
-            {subtitle && <div className="kit-muted">{subtitle}</div>}
+            {subtitle && <div className="kit-cardSubtitle">{subtitle}</div>}
           </div>
           {actions}
         </div>

@@ -4,12 +4,14 @@ import { Link, useParams } from "react-router-dom";
 import { useClientDetails } from "../../hooks/useClientDetails.js";
 import { usePortalLinks } from "../../hooks/usePortalLinks.js";
 import { useRecordClientPayment } from "../../hooks/useRecordClientPayment.js";
+import useNotifications from "../../hooks/useNotifications.js";
 import Button from "../../components/kit/Button.jsx";
 import Card from "../../components/kit/Card.jsx";
 import Modal from "../../components/kit/Modal.jsx";
 import Skeleton from "../../components/kit/Skeleton.jsx";
 import StatusPill from "../../components/kit/StatusPill.jsx";
 import Table from "../../components/kit/Table.jsx";
+import Banner from "../../components/ui/Banner.jsx";
 
 const money = (value) => {
   if (value === null || value === undefined) return "0.00";
@@ -30,6 +32,7 @@ const ClientDetails = () => {
   const { clientQuery, statementQuery } = useClientDetails(id);
   const { linksQuery, createLink, revokeLink } = usePortalLinks(id);
   const recordPayment = useRecordClientPayment();
+  const { addNotification } = useNotifications();
 
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState({ amount: "", method: "cash", reference: "", paid_at: "" });
@@ -111,8 +114,16 @@ const ClientDetails = () => {
       await navigator.clipboard.writeText(url);
       setLinkCopied(true);
       setTimeout(() => setLinkCopied(false), 1500);
+      addNotification({
+        title: "Link copied",
+        message: "Client portal link copied to clipboard.",
+      });
     } catch {
       setLinkCopied(false);
+      addNotification({
+        title: "Copy failed",
+        message: "Could not copy link. Please copy manually.",
+      });
     }
   };
 
@@ -214,7 +225,7 @@ const ClientDetails = () => {
             <Skeleton className="kit-skeletonLg" />
           </div>
         ) : error ? (
-          <StatusPill tone="danger">{error?.message || "Failed to load customer"}</StatusPill>
+          <Banner variant="danger" title="Failed to load customer" message={error?.message || "Please try again."} />
         ) : (
           <div className="kit-kv">
             <div className="kit-kvItem">
@@ -241,9 +252,11 @@ const ClientDetails = () => {
             <Skeleton className="kit-skeletonLg" />
           </div>
         ) : timelineRows.length === 0 ? (
-          <StatusPill tone="info">No ledger activity</StatusPill>
+          <Banner variant="info" message="No ledger activity yet." />
         ) : (
-          <Table keyField="key" columns={columns} rows={timelineRows} />
+          <div className="tableScroll">
+            <Table keyField="key" columns={columns} rows={timelineRows} />
+          </div>
         )}
       </Card>
 
@@ -253,7 +266,11 @@ const ClientDetails = () => {
         </div>
         {createLink.error ? (
           <div className="portalGrid">
-            <StatusPill tone="danger">{createLink.error?.message || "Failed to generate link"}</StatusPill>
+            <Banner
+              variant="danger"
+              title="Failed to generate link"
+              message={createLink.error?.message || "Please try again."}
+            />
           </div>
         ) : null}
         <div className="kit-form">
@@ -280,10 +297,8 @@ const ClientDetails = () => {
         {generatedLink?.url ? (
           <div className="kit-formRow">
             <div className="kit-label">Latest link</div>
-            <div className="kit-inline" style={{ gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
-              <span className="kit-muted" style={{ wordBreak: "break-all" }}>
-                {generatedLink.url}
-              </span>
+            <div className="kit-inline" style={{ gap: "0.75rem", alignItems: "center" }}>
+              <code className="codeBlock">{generatedLink.url}</code>
               <Button variant="ghost" type="button" onClick={copyLink}>
                 {linkCopied ? "Copied" : "Copy"}
               </Button>
@@ -299,11 +314,17 @@ const ClientDetails = () => {
             <Skeleton className="kit-skeletonLg" />
           </div>
         ) : linksQuery.error ? (
-          <StatusPill tone="danger">{linksQuery.error?.message || "Failed to load links"}</StatusPill>
+          <Banner
+            variant="danger"
+            title="Failed to load links"
+            message={linksQuery.error?.message || "Please try again."}
+          />
         ) : linkRows.length === 0 ? (
-          <StatusPill tone="info">No links generated yet</StatusPill>
+          <Banner variant="info" message="No links generated yet." />
         ) : (
-          <Table keyField="token_id" columns={linkColumns} rows={linkRows} />
+          <div className="tableScroll">
+            <Table keyField="token_id" columns={linkColumns} rows={linkRows} />
+          </div>
         )}
       </Card>
 
@@ -324,7 +345,7 @@ const ClientDetails = () => {
       >
         {recordPayment.error ? (
           <div className="portalGrid">
-            <StatusPill tone="danger">{recordPayment.error?.message || "Failed to save"}</StatusPill>
+            <Banner variant="danger" title="Failed to save" message={recordPayment.error?.message || "Please try again."} />
           </div>
         ) : null}
         <div className="kit-form">

@@ -9,6 +9,7 @@ import Card from "../../components/kit/Card.jsx";
 import Skeleton from "../../components/kit/Skeleton.jsx";
 import StatusPill from "../../components/kit/StatusPill.jsx";
 import Table from "../../components/kit/Table.jsx";
+import Banner from "../../components/ui/Banner.jsx";
 
 const money = (value) => {
   if (value === null || value === undefined) return "0.00";
@@ -80,11 +81,11 @@ const Portal = () => {
       <div className="portalPage">
         <div className="kit-container portalGrid">
           <Card title="Portal">
-            <StatusPill tone="danger">Missing token</StatusPill>
-            <div className="u-text-muted">
-              This portal link requires a secure access token. Check your invite email or ask an administrator for a valid
-              link.
-            </div>
+            <Banner
+              variant="danger"
+              title="Missing token"
+              message="This portal link requires a secure access token. Check your invite email or ask an administrator for a valid link."
+            />
           </Card>
         </div>
       </div>
@@ -108,7 +109,7 @@ const Portal = () => {
       <div className="portalPage">
         <div className="kit-container portalGrid">
           <Card title="Portal">
-            <StatusPill tone="danger">{error.message || "Failed to load portal"}</StatusPill>
+            <Banner variant="danger" title="Failed to load portal" message={error.message || "Please try again."} />
           </Card>
         </div>
       </div>
@@ -184,35 +185,47 @@ const Portal = () => {
           }
         >
           <div className="portalGrid">
-            <div className="kit-card">
+            <div className="kit-card portalHero">
               <div className="portalHeader">
                 <div>
                   <div className="kit-cardTitle">{client?.name || "Client"}</div>
-                  <div>
-                    Balance: {money(data?.balance?.balance)} (as of {data?.balance?.as_of_date || "today"})
-                  </div>
-                  <div>
-                    Open invoices: {stats.open_invoices ?? 0} ظت Total open: {money(stats.total_open_amount)}
-                  </div>
+                  <div className="kit-muted">Secure, read-only portal access</div>
                 </div>
                 <StatusPill tone="success">Read-only</StatusPill>
+              </div>
+              <div className="portalStats">
+                <div className="portalStat">
+                  <div className="portalStatLabel">Balance</div>
+                  <div className="portalStatValue">{money(data?.balance?.balance)}</div>
+                  <div className="kit-muted">As of {data?.balance?.as_of_date || "today"}</div>
+                </div>
+                <div className="portalStat">
+                  <div className="portalStatLabel">Open invoices</div>
+                  <div className="portalStatValue">{stats.open_invoices ?? 0}</div>
+                </div>
+                <div className="portalStat">
+                  <div className="portalStatLabel">Total open</div>
+                  <div className="portalStatValue">{money(stats.total_open_amount)}</div>
+                </div>
               </div>
             </div>
 
             {activeTab === "summary" ? (
               <Card title="Recent Activity">
                 {recent.length === 0 ? (
-                  <StatusPill tone="info">No activity</StatusPill>
+                  <Banner variant="info" message="No activity yet." />
                 ) : (
-                  <Table
-                    keyField="timestamp"
-                    columns={[
-                      { key: "title", header: "Title" },
-                      { key: "description", header: "Description" },
-                      { key: "timestamp", header: "When" },
-                    ]}
-                    rows={recent}
-                  />
+                  <div className="portalTableWrap">
+                    <Table
+                      keyField="timestamp"
+                      columns={[
+                        { key: "title", header: "Title" },
+                        { key: "description", header: "Description" },
+                        { key: "timestamp", header: "When" },
+                      ]}
+                      rows={recent}
+                    />
+                  </div>
                 )}
               </Card>
             ) : null}
@@ -220,7 +233,7 @@ const Portal = () => {
             {activeTab === "invoices" ? (
               <Card title="Invoices">
                 <div className="portalGrid" style={{ gap: "0.75rem" }}>
-                  <div className="portalTabs" style={{ flexWrap: "wrap" }}>
+                  <div className="portalTabs">
                     {["all", "open", "paid", "overdue"].map((key) => (
                       <Button
                         key={key}
@@ -232,7 +245,7 @@ const Portal = () => {
                       </Button>
                     ))}
                   </div>
-                  <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
+                  <div className="portalSearch">
                     <input
                       className="kit-input"
                       placeholder="Search invoice number/reference"
@@ -250,7 +263,7 @@ const Portal = () => {
                       Search
                     </Button>
                     <select
-                      className="kit-input"
+                      className="kit-select"
                       value={sortOrder}
                       onChange={(event) => setSortOrder(event.target.value)}
                       style={{ minWidth: "160px" }}
@@ -263,18 +276,20 @@ const Portal = () => {
                   {invoicesQuery.isLoading ? (
                     <Skeleton className="kit-skeleton" />
                   ) : invoicesQuery.error ? (
-                    <StatusPill tone="danger">{invoicesQuery.error?.message || "Failed to load invoices"}</StatusPill>
+                    <Banner variant="danger" title="Failed to load invoices" message={invoicesQuery.error?.message || "Please try again."} />
                   ) : invoiceRows.length === 0 ? (
-                    <StatusPill tone="info">No invoices found</StatusPill>
+                    <Banner variant="info" message="No invoices found." />
                   ) : (
-                    <Table keyField="id" columns={invoicesColumns} rows={invoiceRows} />
+                    <div className="portalTableWrap">
+                      <Table keyField="id" columns={invoicesColumns} rows={invoiceRows} />
+                    </div>
                   )}
 
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem" }}>
+                  <div className="portalPagination">
                     <div className="u-text-muted">
                       {invoiceTotal} total · Page {invoicePage} of {invoicePages}
                     </div>
-                    <div style={{ display: "flex", gap: "0.5rem" }}>
+                    <div className="kit-inline">
                       <Button
                         type="button"
                         variant="ghost"
@@ -299,7 +314,9 @@ const Portal = () => {
 
             {activeTab === "payments" ? (
               <Card title="Payments">
-                <Table keyField="id" columns={paymentsColumns} rows={data?.payments || []} />
+                <div className="portalTableWrap">
+                  <Table keyField="id" columns={paymentsColumns} rows={data?.payments || []} />
+                </div>
               </Card>
             ) : null}
 
@@ -313,20 +330,22 @@ const Portal = () => {
                 }
               >
                 <div className="portalGrid" style={{ gap: "0.75rem" }}>
-                  <div style={{ display: "flex", gap: "1rem", flexWrap: "wrap" }}>
-                    <div>
-                      <div className="u-text-muted">Opening balance</div>
-                      <div style={{ fontWeight: 700 }}>{money(statement?.opening_balance)}</div>
+                  <div className="portalStats">
+                    <div className="portalStat">
+                      <div className="portalStatLabel">Opening balance</div>
+                      <div className="portalStatValue">{money(statement?.opening_balance)}</div>
                     </div>
-                    <div>
-                      <div className="u-text-muted">Closing balance</div>
-                      <div style={{ fontWeight: 700 }}>{money(statement?.closing_balance)}</div>
+                    <div className="portalStat">
+                      <div className="portalStatLabel">Closing balance</div>
+                      <div className="portalStatValue">{money(statement?.closing_balance)}</div>
                     </div>
                   </div>
                   {statementLines.length === 0 ? (
-                    <StatusPill tone="info">No statement activity</StatusPill>
+                    <Banner variant="info" message="No statement activity." />
                   ) : (
-                    <Table keyField="line_id" columns={statementColumns} rows={statementLines} />
+                    <div className="portalTableWrap">
+                      <Table keyField="line_id" columns={statementColumns} rows={statementLines} />
+                    </div>
                   )}
                 </div>
               </Card>
