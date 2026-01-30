@@ -17,6 +17,7 @@ from app.schemas.payment import PaymentPublic
 class PortalLinkRequest(BaseSchema):
     client_id: UUID
     expires_in: int | None = None  # seconds
+    expires_in_hours: int | None = None
 
 
 class PortalLinkResponse(BaseSchema):
@@ -24,6 +25,20 @@ class PortalLinkResponse(BaseSchema):
     url: str
     expires_at: datetime | None = None
     token_id: UUID | None = None
+
+
+class PortalLinkItem(BaseSchema):
+    token_id: UUID
+    created_at: datetime
+    expires_at: datetime
+    revoked_at: datetime | None = None
+    is_used: bool
+
+
+class PortalLinkRevokeResponse(BaseSchema):
+    success: bool = True
+    token_id: UUID
+    revoked_at: datetime | None = None
 
 
 class PortalActivityItem(BaseSchema):
@@ -67,6 +82,8 @@ class PortalStatementResponse(BaseSchema):
 __all__ = [
     "PortalLinkRequest",
     "PortalLinkResponse",
+    "PortalLinkItem",
+    "PortalLinkRevokeResponse",
     "PortalActivityItem",
     "PortalSummaryStats",
     "PortalSummaryResponse",

@@ -30,6 +30,7 @@ from app.schemas.portal import (
     PortalSummaryStats,
 )
 from app.services import (
+    audit_log_service,
     customer_service,
     email_service,
     portal_service,
@@ -38,9 +39,33 @@ from app.services import (
 logger = logging.getLogger(__name__)
 
 
-def token_expiry(expires_in: int | None, default_seconds: int = 86400) -> datetime:
+DEFAULT_PORTAL_LINK_HOURS = 720
+
+
+def token_expiry(expires_in: int | None, default_seconds: int = DEFAULT_PORTAL_LINK_HOURS * 3600) -> datetime:
     seconds = expires_in if expires_in and expires_in > 0 else default_seconds
     return datetime.now(UTC) + timedelta(seconds=seconds)
+
+
+def resolve_portal_link_expiry_seconds(payload: PortalLinkRequest) -> int:
+    # Precedence: expires_in (seconds) wins if provided and positive, even when expires_in_hours is set.
+    if payload.expires_in and payload.expires_in > 0:
+        return payload.expires_in
+    if payload.expires_in_hours is not None:
+        try:
+            hours = int(payload.expires_in_hours)
+        except (TypeError, ValueError) as exc:
+            raise AppException(
+                code="portal_link_expiry_hours_invalid",
+                message="expires_in_hours must be between 1 and 720",
+                http_status=status.HTTP_400_BAD_REQUEST,
+            ) from exc
+        if hours < 1:
+            hours = 1
+        elif hours > DEFAULT_PORTAL_LINK_HOURS:
+            hours = DEFAULT_PORTAL_LINK_HOURS
+        return hours * 3600
+    return DEFAULT_PORTAL_LINK_HOURS * 3600
 
 
 async def portal_rate_limit(request: Request, settings: Any, key: str = "portal_view") -> None:
@@ -138,6 +163,8 @@ async def generate_portal_link_use_case(
     session: AsyncSession,
     tenant_id: UUID,
     settings: Any,
+    *,
+    actor_id: UUID | None = None,
 ) -> dict[str, Any]:
     await portal_rate_limit(request, settings, key="portal")
     if not payload.client_id:
@@ -146,12 +173,29 @@ async def generate_portal_link_use_case(
         )
     customer = await _ensure_customer_exists(session, tenant_id, payload.client_id)
 
-    expires_at = token_expiry(payload.expires_in)
+    expires_at = token_expiry(resolve_portal_link_expiry_seconds(payload))
     raw_token, token = await portal_service.create_portal_token_for_customer(
         session, tenant_id, payload.client_id, expires_at
     )
     relative_url = f"/portal/{raw_token}"
     portal_url = email_service.build_frontend_url(relative_url, settings=settings) or relative_url
+
+    try:
+        await audit_log_service.record_audit_log(
+            session,
+            tenant_id,
+            "portal_tokens",
+            str(token.id),
+            "PORTAL_LINK.CREATE",
+            user_id=actor_id,
+            new_data={
+                "entity_type": "CUSTOMER",
+                "entity_id": str(customer.id),
+                "expires_at": token.expires_at.isoformat(),
+            },
+        )
+    except Exception:
+        pass
 
     return {"success": True, "url": portal_url, "expires_at": token.expires_at, "token_id": token.id}
 

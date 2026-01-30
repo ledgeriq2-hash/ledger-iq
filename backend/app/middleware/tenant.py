@@ -17,7 +17,13 @@ class TenantMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next: Callable) -> Response:
         path = (request.url.path or "").lower()
         is_api_path = path.startswith("/api/")
-        is_portal_public = path.startswith("/api/v1/portal/") and not path.startswith("/api/v1/portal/link")
+        portal_prefix = "/api/v1/portal/"
+        is_portal_public = False
+        if path.startswith(portal_prefix):
+            suffix = path[len(portal_prefix):]
+            parts = [part for part in suffix.split("/") if part]
+            if len(parts) == 2 and parts[1] in {"summary", "balance", "invoices", "payments", "statement"}:
+                is_portal_public = True
         is_exempt = path.startswith("/health") or path.startswith("/metrics") or path in {
             "/openapi.json",
             "/docs",

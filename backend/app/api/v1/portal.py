@@ -10,6 +10,7 @@ from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import deps
+from app.core.exceptions import AppException
 from app.core.pagination import PaginatedResponse, PaginationParams, paginate_query, pagination_params
 from app.models.portal_token import PortalEntityType
 from app.models.treasury_transaction import TreasuryTransaction
@@ -18,12 +19,15 @@ from app.schemas.common import BaseSchema
 from app.schemas.portal import (
     PortalBalanceResponse,
     PortalInvoicesResponse,
+    PortalLinkItem,
     PortalLinkRequest,
+    PortalLinkRevokeResponse,
     PortalLinkResponse,
     PortalPaymentsResponse,
     PortalStatementResponse,
     PortalSummaryResponse,
 )
+from app.services import audit_log_service, portal_service
 from app.use_cases.portal.service import (
     generate_portal_link_use_case,
     portal_balance_response,
@@ -78,12 +82,72 @@ async def generate_portal_link(
     request: Request,
     session: AsyncSession = Depends(deps.get_db),
     tenant_id: UUID = Depends(deps.get_current_tenant),
-    _: User = Depends(deps.get_current_active_user),
+    user: User = Depends(deps.get_current_active_user),
     settings=Depends(deps.get_settings),
 ):
     await portal_rate_limit(request, settings, key="portal_link")
-    result = await generate_portal_link_use_case(payload, request, session, tenant_id, settings)
+    actor_id = getattr(user, "id", None)
+    result = await generate_portal_link_use_case(
+        payload, request, session, tenant_id, settings, actor_id=actor_id
+    )
     return PortalLinkResponse(**result)
+
+
+@router.get("/customers/{customer_id}/links", response_model=list[PortalLinkItem])
+async def list_customer_links(
+    customer_id: UUID,
+    request: Request,
+    session: AsyncSession = Depends(deps.get_db),
+    tenant_id: UUID = Depends(deps.get_current_tenant),
+    _: User = Depends(deps.get_current_active_user),
+    settings=Depends(deps.get_settings),
+):
+    await portal_rate_limit(request, settings, key="portal_link_list")
+    tokens = await portal_service.list_portal_tokens_for_customer(session, tenant_id, customer_id)
+    return [
+        PortalLinkItem(
+            token_id=token.id,
+            created_at=token.created_at,
+            expires_at=token.expires_at,
+            revoked_at=token.revoked_at,
+            is_used=token.is_used,
+        )
+        for token in tokens
+    ]
+
+
+@router.post("/links/{token_id}/revoke", response_model=PortalLinkRevokeResponse)
+async def revoke_portal_link(
+    token_id: UUID,
+    request: Request,
+    session: AsyncSession = Depends(deps.get_db),
+    tenant_id: UUID = Depends(deps.get_current_tenant),
+    user: User = Depends(deps.get_current_active_user),
+    settings=Depends(deps.get_settings),
+):
+    await portal_rate_limit(request, settings, key="portal_link_revoke")
+    token = await portal_service.revoke_portal_token(
+        session, tenant_id, token_id, entity_type=PortalEntityType.CUSTOMER
+    )
+    if not token:
+        raise AppException(
+            code="portal_link_not_found",
+            message="Portal link not found",
+            http_status=status.HTTP_404_NOT_FOUND,
+        )
+    try:
+        await audit_log_service.record_audit_log(
+            session,
+            tenant_id,
+            "portal_tokens",
+            str(token.id),
+            "PORTAL_LINK.REVOKE",
+            user_id=getattr(user, "id", None),
+            new_data={"revoked_at": token.revoked_at.isoformat() if token.revoked_at else None},
+        )
+    except Exception:
+        pass
+    return PortalLinkRevokeResponse(success=True, token_id=token.id, revoked_at=token.revoked_at)
 
 
 @router.get("/{token}/summary", response_model=PortalSummaryResponse)

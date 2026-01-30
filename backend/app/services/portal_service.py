@@ -54,6 +54,21 @@ async def list_portal_tokens(session: AsyncSession, tenant_id: UUID) -> Sequence
     return result.scalars().all()
 
 
+async def list_portal_tokens_for_customer(
+    session: AsyncSession, tenant_id: UUID, customer_id: UUID
+) -> Sequence[PortalToken]:
+    result = await session.execute(
+        select(PortalToken)
+        .where(
+            PortalToken.tenant_id == tenant_id,
+            PortalToken.entity_type == PortalEntityType.CUSTOMER,
+            PortalToken.entity_id == customer_id,
+        )
+        .order_by(PortalToken.created_at.desc())
+    )
+    return result.scalars().all()
+
+
 async def get_portal_token(session: AsyncSession, tenant_id: UUID, token_id: UUID) -> PortalToken | None:
     result = await session.execute(
         select(PortalToken).where(PortalToken.id == token_id, PortalToken.tenant_id == tenant_id)
@@ -121,6 +136,25 @@ async def mark_portal_token_used(
     return token
 
 
+async def revoke_portal_token(
+    session: AsyncSession,
+    tenant_id: UUID,
+    token_id: UUID,
+    *,
+    entity_type: PortalEntityType | None = None,
+) -> PortalToken | None:
+    token = await get_portal_token(session, tenant_id, token_id)
+    if not token:
+        return None
+    if entity_type and token.entity_type != entity_type:
+        return None
+    if token.revoked_at is None:
+        token.revoked_at = datetime.now(UTC)
+        await session.commit()
+        await session.refresh(token)
+    return token
+
+
 async def delete_portal_token(session: AsyncSession, tenant_id: UUID, token_id: UUID) -> bool:
     result = await session.execute(
         delete(PortalToken).where(PortalToken.id == token_id, PortalToken.tenant_id == tenant_id)
@@ -148,6 +182,8 @@ async def validate_portal_token(
     now = datetime.now(UTC)
     if expires_at <= now:
         return None
+    if portal_token.revoked_at is not None:
+        return None
     if portal_token.is_used:
         return None
 
@@ -168,6 +204,7 @@ async def validate_portal_token(
 
 __all__ = [
     "list_portal_tokens",
+    "list_portal_tokens_for_customer",
     "get_portal_token",
     "get_portal_token_by_hash",
     "create_portal_token",
@@ -175,5 +212,6 @@ __all__ = [
     "create_portal_token_for_supplier",
     "validate_portal_token",
     "mark_portal_token_used",
+    "revoke_portal_token",
     "delete_portal_token",
 ]

@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { useClientDetails } from "../../hooks/useClientDetails.js";
+import { usePortalLinks } from "../../hooks/usePortalLinks.js";
 import { useRecordClientPayment } from "../../hooks/useRecordClientPayment.js";
 import Button from "../../components/kit/Button.jsx";
 import Card from "../../components/kit/Card.jsx";
@@ -27,14 +28,20 @@ const splitBalance = (balance) => {
 const ClientDetails = () => {
   const { id } = useParams();
   const { clientQuery, statementQuery } = useClientDetails(id);
+  const { linksQuery, createLink, revokeLink } = usePortalLinks(id);
   const recordPayment = useRecordClientPayment();
 
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState({ amount: "", method: "cash", reference: "", paid_at: "" });
+  const [linkForm, setLinkForm] = useState({ expiresInHours: 720 });
+  const [generatedLink, setGeneratedLink] = useState(null);
+  const [linkCopied, setLinkCopied] = useState(false);
+  const [revokingId, setRevokingId] = useState(null);
 
   const client = clientQuery.data;
   const statement = statementQuery.data?.data;
   const lines = Array.isArray(statement?.lines) ? statement.lines : [];
+  const links = Array.isArray(linksQuery.data) ? linksQuery.data : [];
 
   const balance = client?.balance ?? statement?.closing_balance ?? 0;
   const { owed, dueToCustomer } = splitBalance(balance);
@@ -71,6 +78,10 @@ const ClientDetails = () => {
   const error = clientQuery.error || statementQuery.error;
 
   const canSubmit = !recordPayment.isPending && Number(form.amount) > 0 && Boolean(form.method);
+  const expiresInHours = Number(linkForm.expiresInHours);
+  const isExpiryValid =
+    Number.isFinite(expiresInHours) && expiresInHours >= 1 && expiresInHours <= 720;
+  const canGenerateLink = isExpiryValid && !createLink.isPending && Boolean(id);
 
   const submit = async () => {
     await recordPayment.mutateAsync({
@@ -84,6 +95,101 @@ const ClientDetails = () => {
     setModalOpen(false);
     setForm({ amount: "", method: "cash", reference: "", paid_at: "" });
   };
+
+  const generateLink = async () => {
+    if (!canGenerateLink) return;
+    const payload = { expiresInHours };
+    const result = await createLink.mutateAsync(payload);
+    setGeneratedLink(result);
+    setLinkCopied(false);
+  };
+
+  const copyLink = async () => {
+    const url = generatedLink?.url;
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 1500);
+    } catch {
+      setLinkCopied(false);
+    }
+  };
+
+  const revokePortalLink = async (tokenId) => {
+    if (!tokenId) return;
+    setRevokingId(tokenId);
+    try {
+      await revokeLink.mutateAsync(tokenId);
+    } finally {
+      setRevokingId(null);
+    }
+  };
+
+  const formatDateTime = (value) => {
+    if (!value) return "—";
+    const dt = new Date(value);
+    if (Number.isNaN(dt.getTime())) return String(value);
+    return dt.toLocaleString();
+  };
+
+  const linkRows = useMemo(() => {
+    const now = Date.now();
+    return links.map((link) => {
+      const expiresAt = link?.expires_at ? new Date(link.expires_at).getTime() : null;
+      const revokedAt = link?.revoked_at;
+      let status = "Active";
+      if (revokedAt) status = "Revoked";
+      else if (expiresAt && now > expiresAt) status = "Expired";
+      return {
+        token_id: link?.token_id,
+        created_at: link?.created_at,
+        expires_at: link?.expires_at,
+        revoked_at: revokedAt,
+        status,
+        is_used: link?.is_used,
+      };
+    });
+  }, [links]);
+
+  const linkColumns = [
+    {
+      key: "created_at",
+      header: "Created",
+      render: (row) => formatDateTime(row.created_at),
+    },
+    {
+      key: "expires_at",
+      header: "Expires",
+      render: (row) => formatDateTime(row.expires_at),
+    },
+    {
+      key: "status",
+      header: "Status",
+      render: (row) => {
+        const tone = row.status === "Active" ? "success" : row.status === "Expired" ? "warning" : "danger";
+        return <StatusPill tone={tone}>{row.status}</StatusPill>;
+      },
+    },
+    {
+      key: "actions",
+      header: "Actions",
+      render: (row) => {
+        const isRevoking = revokeLink.isPending && revokingId === row.token_id;
+        if (row.status !== "Active") return "—";
+        return (
+          <Button
+            variant="ghost"
+            type="button"
+            disabled={isRevoking}
+            onClick={() => revokePortalLink(row.token_id)}
+          >
+            {isRevoking ? "Revoking..." : "Revoke"}
+          </Button>
+        );
+      },
+    },
+  ];
 
   return (
     <div className="portalGrid">
@@ -138,6 +244,66 @@ const ClientDetails = () => {
           <StatusPill tone="info">No ledger activity</StatusPill>
         ) : (
           <Table keyField="key" columns={columns} rows={timelineRows} />
+        )}
+      </Card>
+
+      <Card title="Client Share Link">
+        <div className="kit-muted" style={{ marginBottom: "0.75rem" }}>
+          Generate time-limited access for this customer portal.
+        </div>
+        {createLink.error ? (
+          <div className="portalGrid">
+            <StatusPill tone="danger">{createLink.error?.message || "Failed to generate link"}</StatusPill>
+          </div>
+        ) : null}
+        <div className="kit-form">
+          <div className="kit-formRow">
+            <div className="kit-label">Expiry (hours)</div>
+            <input
+              className="kit-input"
+              type="number"
+              min="1"
+              max="720"
+              value={linkForm.expiresInHours}
+              onChange={(e) => setLinkForm((p) => ({ ...p, expiresInHours: e.target.value }))}
+            />
+            <div className="kit-muted">1 to 720 hours</div>
+          </div>
+          <div className="kit-formRow">
+            <Button type="button" disabled={!canGenerateLink} onClick={generateLink}>
+              {createLink.isPending ? "Generating..." : "Generate Link"}
+            </Button>
+            {!isExpiryValid ? <StatusPill tone="warning">Enter 1 - 720 hours</StatusPill> : null}
+          </div>
+        </div>
+
+        {generatedLink?.url ? (
+          <div className="kit-formRow">
+            <div className="kit-label">Latest link</div>
+            <div className="kit-inline" style={{ gap: "0.75rem", alignItems: "center", flexWrap: "wrap" }}>
+              <span className="kit-muted" style={{ wordBreak: "break-all" }}>
+                {generatedLink.url}
+              </span>
+              <Button variant="ghost" type="button" onClick={copyLink}>
+                {linkCopied ? "Copied" : "Copy"}
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
+        <div className="kit-label" style={{ marginTop: "1rem" }}>
+          Existing links
+        </div>
+        {linksQuery.isLoading ? (
+          <div className="portalGrid">
+            <Skeleton className="kit-skeletonLg" />
+          </div>
+        ) : linksQuery.error ? (
+          <StatusPill tone="danger">{linksQuery.error?.message || "Failed to load links"}</StatusPill>
+        ) : linkRows.length === 0 ? (
+          <StatusPill tone="info">No links generated yet</StatusPill>
+        ) : (
+          <Table keyField="token_id" columns={linkColumns} rows={linkRows} />
         )}
       </Card>
 

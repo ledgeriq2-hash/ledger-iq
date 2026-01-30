@@ -21,6 +21,30 @@ const ensureLeadingSlash = (value = "") => {
   return value.startsWith("/") ? value : `/${value}`;
 };
 
+const PORTAL_PUBLIC_ROUTE_RE =
+  /^\/(?:v1\/)?portal\/[^/]+\/(summary|balance|invoices|payments|statement)$/i;
+
+const getUrlPathname = (value = "") => {
+  if (!value) return "/";
+  try {
+    return new URL(value, "http://localhost").pathname || "/";
+  } catch {
+    return String(value || "/");
+  }
+};
+
+const isPortalPublicPath = (url = "") => {
+  const pathname = getUrlPathname(url);
+  const normalized = ensureLeadingSlash(pathname);
+  return PORTAL_PUBLIC_ROUTE_RE.test(normalized);
+};
+
+const isPortalPath = (url = "") => {
+  const pathname = getUrlPathname(url);
+  const normalized = ensureLeadingSlash(pathname);
+  return normalized.startsWith(`${API_VERSION_PREFIX}/portal/`) || normalized.startsWith("/portal/");
+};
+
 const resolveOrigin = () => {
   const override = trimSuffix(getEnvValue("VITE_API_ORIGIN"));
   if (override) return override;
@@ -68,30 +92,40 @@ const getResolvedUrl = (config = {}) => {
 };
 
 const shouldSkipTenant = (url = "", config = {}) => {
-  if (config.skipTenant === true) return true;
-  const normalized = ensureLeadingSlash(url);
+  const normalized = ensureLeadingSlash(getUrlPathname(url));
+  const portalPublic = isPortalPublicPath(normalized);
+  if (config.skipTenant === true) {
+    if (isPortalPath(normalized) && !portalPublic) {
+      return false;
+    }
+    return true;
+  }
   return (
     normalized.startsWith(`${API_VERSION_PREFIX}/auth/`) ||
     normalized.startsWith("/auth/") ||
     normalized.startsWith("/health") ||
-    normalized.startsWith(`${API_VERSION_PREFIX}/portal/`) ||
-    normalized.startsWith("/portal/")
+    portalPublic
   );
 };
 
 const shouldSkipAuth = (url = "", config = {}) => {
-  if (config.skipAuth === true) return true;
-  const normalized = ensureLeadingSlash(url);
-  return normalized.startsWith(`${API_VERSION_PREFIX}/portal/`) || normalized.startsWith("/portal/");
+  const normalized = ensureLeadingSlash(getUrlPathname(url));
+  const portalPublic = isPortalPublicPath(normalized);
+  if (config.skipAuth === true) {
+    if (isPortalPath(normalized) && !portalPublic) {
+      return false;
+    }
+    return true;
+  }
+  return portalPublic;
 };
 
 const isAuthRoute = (url = "") => {
-  const normalized = ensureLeadingSlash(url);
+  const normalized = ensureLeadingSlash(getUrlPathname(url));
   return (
     normalized.startsWith(`${API_VERSION_PREFIX}/auth/`) ||
     normalized.startsWith("/auth/") ||
-    normalized.startsWith(`${API_VERSION_PREFIX}/portal/`) ||
-    normalized.startsWith("/portal/")
+    isPortalPublicPath(normalized)
   );
 };
 

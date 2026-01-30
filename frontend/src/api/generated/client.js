@@ -13,6 +13,23 @@ const buildPortalHeaders = (token) => {
   return { "X-Portal-Token": token };
 };
 
+const isPortalPublicPath = (path = "") => {
+  if (typeof path !== "string") return false;
+  const normalized = path.startsWith("/") ? path : `/${path}`;
+  const prefixes = ["/api/v1/portal/", "/portal/"];
+  for (const prefix of prefixes) {
+    if (!normalized.startsWith(prefix)) continue;
+    const suffix = normalized.slice(prefix.length);
+    const firstSegment = (suffix.split("/", 1)[0] || "").trim();
+    if (!firstSegment) return false;
+    if (["link", "links", "customers"].includes(firstSegment)) {
+      return false;
+    }
+    return true;
+  }
+  return false;
+};
+
 const request = async ({ method, path, pathParams, query, body, headers: extraHeaders }) => {
   const resolvedPath = applyPathParams(path, pathParams);
   const config = {
@@ -20,7 +37,7 @@ const request = async ({ method, path, pathParams, query, body, headers: extraHe
     method,
     params: query,
     headers: { ...(extraHeaders || {}) },
-    skipTenant: resolvedPath.startsWith("/api/v1/portal/"),
+    skipTenant: isPortalPublicPath(resolvedPath),
   };
   if (body !== undefined) {
     config.data = body;
@@ -269,6 +286,24 @@ export const api = {
     listMine: async (params = {}) => request({ method: "GET", path: "/api/v1/feedback/", query: params }),
   },
   portal: {
+    createLink: async (payload) =>
+      request({
+        method: "POST",
+        path: "/api/v1/portal/link",
+        body: payload,
+      }),
+    listCustomerLinks: async (customerId) =>
+      request({
+        method: "GET",
+        path: "/api/v1/portal/customers/{customer_id}/links",
+        pathParams: { customer_id: customerId },
+      }),
+    revokeLink: async (tokenId) =>
+      request({
+        method: "POST",
+        path: "/api/v1/portal/links/{token_id}/revoke",
+        pathParams: { token_id: tokenId },
+      }),
     summary: async (token) =>
       request({
         method: "GET",
