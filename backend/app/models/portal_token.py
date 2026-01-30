@@ -36,6 +36,7 @@ class PortalToken(BaseModel):
         Index("ix_portal_tokens_created_at", "created_at"),
         Index("ix_portal_tokens_entity", "entity_type", "entity_id"),
         Index("ix_portal_tokens_tenant_entity_created", "tenant_id", "entity_type", "entity_id", "created_at"),
+        Index("ix_portal_tokens_tenant_entity_expires", "tenant_id", "entity_type", "entity_id", "expires_at"),
         Index("ix_portal_tokens_token_hash", "token_hash", unique=True),
         UniqueConstraint("tenant_id", "entity_type", "entity_id", "token_hash", name="uq_portal_tokens_tenant_entity_token"),
     )

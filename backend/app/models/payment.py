@@ -41,6 +41,7 @@ class Payment(BaseModel):
         Index("ix_payments_customer_id", "customer_id"),
         Index("ix_payments_event_date", "event_date"),
         Index("ix_payments_tenant_event_date", "tenant_id", "event_date"),
+        Index("ix_payments_tenant_customer_created", "tenant_id", "customer_id", "created_at"),
     )
 
 

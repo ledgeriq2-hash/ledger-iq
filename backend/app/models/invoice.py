@@ -54,6 +54,13 @@ class Invoice(BaseModel):
         Index("ix_invoices_customer_id", "customer_id"),
         Index("ix_invoices_issue_date", "issue_date"),
         Index("ix_invoices_event_date", "event_date"),
+        Index(
+            "ix_invoices_tenant_customer_status_created",
+            "tenant_id",
+            "customer_id",
+            "status",
+            "created_at",
+        ),
     )
 
 
