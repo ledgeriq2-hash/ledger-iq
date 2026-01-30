@@ -5,10 +5,14 @@ from typing import Any
 from pydantic import BaseModel
 
 
-class ErrorResponse(BaseModel):
+class ErrorDetail(BaseModel):
     code: str
     message: str
     details: Any | None = None
+
+
+class ErrorResponse(BaseModel):
+    error: ErrorDetail
     request_id: str | None = None
 
 
@@ -20,11 +24,13 @@ def error_shape(
     request_id: str | None = None,
 ) -> dict[str, Any]:
     return {
-        "code": code,
-        "message": message,
-        "details": details,
+        "error": {
+            "code": code,
+            "message": message,
+            "details": details,
+        },
         "request_id": request_id,
     }
 
 
-__all__ = ["ErrorResponse", "error_shape"]
+__all__ = ["ErrorResponse", "ErrorDetail", "error_shape"]

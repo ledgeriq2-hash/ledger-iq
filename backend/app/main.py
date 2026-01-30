@@ -71,6 +71,7 @@ DEV_ML_CSRF_BYPASS_PREFIXES = (
     "/api/v1/ml/snapshots",
 )
 DB_HEALTH_TIMEOUT_SECONDS = 2.0
+REDIS_HEALTH_TIMEOUT_SECONDS = 2.0
 
 
 class CSRFMiddleware(BaseHTTPMiddleware):
@@ -255,8 +256,30 @@ async def _db_check(log_label: str) -> bool:
     return True
 
 
+async def _redis_check(log_label: str) -> bool:
+    try:
+        client = await get_redis()
+        if hasattr(client, "ping"):
+            await asyncio.wait_for(
+                client.ping(),
+                timeout=REDIS_HEALTH_TIMEOUT_SECONDS,
+            )
+    except asyncio.TimeoutError:  # pragma: no cover - defensive guard
+        logger.warning(log_label, extra={"reason": "timeout"})
+        return False
+    except Exception as exc:  # pragma: no cover - defensive guard
+        logger.warning(log_label, extra={"reason": str(exc)})
+        return False
+    return True
+
+
 @app.get("/health", tags=["health"])
 async def health() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+@app.get("/healthz", tags=["health"])
+async def healthz() -> dict[str, str]:
     return {"status": "ok"}
 
 
@@ -268,14 +291,38 @@ async def health_live() -> dict[str, str]:
 @app.get("/health/ready", tags=["health"])
 async def health_ready():
     if not await _db_check("readiness.failed"):
-        return JSONResponse(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, content={"status": "error"})
+        return json_error_response(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "service_unavailable",
+            "Service not ready",
+            {"postgres": False},
+        )
     return {"status": "ok"}
 
 
 @app.get("/health/db", tags=["health"])
 async def health_db():
     if not await _db_check("health.db.failed"):
-        return JSONResponse(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, content={"status": "error"})
+        return json_error_response(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "service_unavailable",
+            "Database not ready",
+            {"postgres": False},
+        )
+    return {"status": "ok"}
+
+
+@app.get("/readyz", tags=["health"])
+async def readyz():
+    postgres_ready = await _db_check("readyz.postgres.failed")
+    redis_ready = await _redis_check("readyz.redis.failed")
+    if not postgres_ready or not redis_ready:
+        return json_error_response(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "service_unavailable",
+            "Service not ready",
+            {"postgres": postgres_ready, "redis": redis_ready},
+        )
     return {"status": "ok"}
 
 

@@ -13,11 +13,11 @@ except Exception:
 
 
 def register_middlewares(app: FastAPI) -> None:
-    app.add_middleware(RequestIdMiddleware)
+    app.add_middleware(TenantMiddleware)
     if IdentityContextMiddleware is not None:
         app.add_middleware(IdentityContextMiddleware)
-    app.add_middleware(TenantMiddleware)
     app.add_middleware(RequestLoggingMiddleware)
+    app.add_middleware(RequestIdMiddleware)
 
 
 __all__ = [

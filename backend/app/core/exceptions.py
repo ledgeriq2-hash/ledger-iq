@@ -27,11 +27,13 @@ class AppException(Exception):
         *,
         details: Any = None,
         http_status: int = status.HTTP_400_BAD_REQUEST,
+        headers: dict[str, str] | None = None,
     ):
         self.code = code
         self.message = message
         self.details = details
         self.http_status = http_status
+        self.headers = headers
         super().__init__(message)
 
 
@@ -39,12 +41,22 @@ def _error_payload(code: str, message: str, details: Any = None, request_id: str
     return error_shape(code=code, message=message, details=details, request_id=request_id)
 
 
-def json_error_response(status_code: int, code: str, message: str, details: Any = None) -> JSONResponse:
+def json_error_response(
+    status_code: int,
+    code: str,
+    message: str,
+    details: Any = None,
+    headers: dict[str, str] | None = None,
+) -> JSONResponse:
     request_id = request_id_ctx_var.get()
-    headers = {"X-Request-ID": request_id} if request_id else None
+    merged_headers: dict[str, str] = {}
+    if headers:
+        merged_headers.update(headers)
+    if request_id:
+        merged_headers["X-Request-ID"] = request_id
     return JSONResponse(
         status_code=status_code,
-        headers=headers,
+        headers=merged_headers or None,
         content=_error_payload(code, message, details, request_id),
     )
 
@@ -62,7 +74,7 @@ def _jsonable(value: Any) -> Any:
 
 
 async def app_exception_handler(_: Request, exc: AppException) -> JSONResponse:
-    return json_error_response(exc.http_status, exc.code, exc.message, exc.details)
+    return json_error_response(exc.http_status, exc.code, exc.message, exc.details, headers=exc.headers)
 
 
 async def validation_exception_handler(request: Request, exc: RequestValidationError | ValidationError) -> JSONResponse:
@@ -102,10 +114,23 @@ async def integrity_error_handler(_: Request, exc: IntegrityError) -> JSONRespon
 async def http_exception_handler(_: Request, exc: HTTPException) -> JSONResponse:
     status_code = exc.status_code or status.HTTP_500_INTERNAL_SERVER_ERROR
     detail = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
-    code = "unauthorized" if status_code == status.HTTP_401_UNAUTHORIZED else (
-        "forbidden" if status_code == status.HTTP_403_FORBIDDEN else "http_error"
+    if status_code == status.HTTP_401_UNAUTHORIZED:
+        code = "unauthorized"
+    elif status_code == status.HTTP_403_FORBIDDEN:
+        code = "forbidden"
+    elif status_code == status.HTTP_404_NOT_FOUND:
+        code = "not_found"
+    elif status_code == status.HTTP_429_TOO_MANY_REQUESTS:
+        code = "rate_limited"
+    else:
+        code = "http_error"
+    return json_error_response(
+        status_code,
+        code,
+        detail,
+        exc.detail if not isinstance(exc.detail, str) else None,
+        headers=getattr(exc, "headers", None),
     )
-    return json_error_response(status_code, code, detail, exc.detail if not isinstance(exc.detail, str) else None)
 
 
 async def generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
