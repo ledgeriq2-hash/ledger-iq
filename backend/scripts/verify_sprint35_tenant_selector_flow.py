@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 import time
-import uuid
 from http.client import HTTPConnection, HTTPSConnection
 from urllib.parse import urlparse
 
@@ -33,14 +32,13 @@ def _full_path(parsed, path: str) -> str:
     return target
 
 
-def _request(method: str, path: str, headers: dict | None = None, body: bytes | None = None):
+def _request(path: str):
     conn, parsed = _connection()
     try:
-        conn.request(method, _full_path(parsed, path), body=body, headers=headers or {})
+        conn.request("GET", _full_path(parsed, path))
         response = conn.getresponse()
         payload = response.read()
-        response_headers = {k.lower(): v for k, v in response.getheaders()}
-        return response.status, response_headers, payload
+        return response.status, payload
     finally:
         conn.close()
 
@@ -50,7 +48,7 @@ def _wait_for(path: str, expected: int, timeout_seconds: int = 60) -> None:
     last_error = None
     while time.monotonic() < deadline:
         try:
-            status, _, _ = _request("GET", path)
+            status, _ = _request(path)
             if status == expected:
                 return
             last_error = f"status={status}"
@@ -60,38 +58,11 @@ def _wait_for(path: str, expected: int, timeout_seconds: int = 60) -> None:
     raise VerificationError(f"{path} not ready after {timeout_seconds}s. Last error: {last_error}")
 
 
-def _register_tenant() -> uuid.UUID:
-    suffix = uuid.uuid4().hex[:8]
-    payload = {
-        "tenant": {"name": f"Sprint 34 {suffix}", "slug": f"sprint34-{suffix}"},
-        "admin": {
-            "email": f"admin-sprint34-{suffix}@example.com",
-            "password": "Test1234",
-            "full_name": "Sprint 34 Admin",
-        },
-    }
-    headers = {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-        "X-Tenant-Id": str(uuid.uuid4()),
-    }
-    status, _, body = _request("POST", "/api/v1/auth/register", headers=headers, body=json.dumps(payload).encode("utf-8"))
-    if status != 201:
-        raise VerificationError(f"auth register failed: {status}: {body.decode('utf-8', errors='ignore')}")
-    data = json.loads(body.decode("utf-8") or "{}")
-    tenant_id = data.get("tenant", {}).get("id")
-    if not tenant_id:
-        raise VerificationError("auth register response missing tenant id")
-    return uuid.UUID(tenant_id)
-
-
 def run() -> None:
     _wait_for("/healthz", 200)
     _wait_for("/readyz", 200)
 
-    _register_tenant()
-
-    status, _, body = _request("GET", "/api/v1/dev/tenants")
+    status, body = _request("/api/v1/dev/tenants")
     if status == 403:
         raise VerificationError(
             "Dev tenants endpoint blocked. Set LEDGERIQ_ALLOW_DEV_ENDPOINTS=1 (or APP_ENV=dev) and retry."
@@ -106,12 +77,12 @@ def run() -> None:
     if len(items) < 1:
         raise VerificationError("expected at least 1 tenant for selection flow")
 
-    print("PASS: Sprint 34 tenant selection precheck")
+    print("PASS: Sprint 35 tenant selector flow precheck")
     print("Manual UI smoke:")
     print("- Open http://localhost:5173")
     print('- Run: localStorage.removeItem("tenant_id")')
-    print('- If present from older versions: localStorage.removeItem("tenant_slug")')
-    print("- Reload: TenantSelect should appear; selecting a tenant should set tenant_id and navigate")
+    print("- Reload: TenantSelect should appear (even if only one tenant exists)")
+    print("- Pick a company: app should set localStorage key tenant_id and navigate")
 
 
 def main() -> int:

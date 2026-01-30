@@ -118,11 +118,10 @@ export const AuthProvider = ({ children }) => {
           }
           localStorage.removeItem("tenant_slug");
         }
-        if (items.length === 1) {
-          setTenantId(items[0].id);
-          return;
-        }
         if (current && !isCurrentValid) {
+          if (typeof window !== "undefined") {
+            localStorage.removeItem("tenant_id");
+          }
           setTenantId(null);
         }
       })

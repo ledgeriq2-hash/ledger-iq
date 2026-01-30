@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import Card from "../../components/ui/Card.jsx";
@@ -16,7 +16,6 @@ const TenantSelect = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { tenantId, setTenantId } = useAuth();
-  const autoSelectRef = useRef(false);
   const redirectTo = location.state?.from || "/dashboard";
 
   const storedTenantId = useMemo(() => getTenantId(), []);
@@ -54,16 +53,6 @@ const TenantSelect = () => {
       active = false;
     };
   }, []);
-
-  useEffect(() => {
-    if (autoSelectRef.current || tenantId || loadingTenants) return;
-    if (tenants.length === 1) {
-      autoSelectRef.current = true;
-      setTenantId(tenants[0].id);
-      setError("");
-      navigate(redirectTo, { replace: true });
-    }
-  }, [tenantId, loadingTenants, tenants, setTenantId, navigate, redirectTo]);
 
   const onSave = (event) => {
     event.preventDefault();
@@ -103,17 +92,7 @@ const TenantSelect = () => {
     );
   }
 
-  if (!tenantId && tenants.length === 1) {
-    return (
-      <div className="u-grid u-place-center" style={{ minHeight: "70vh" }}>
-        <div className="u-w-full" style={{ maxWidth: 520 }}>
-          <Card title="Selecting tenant" subtitle="One tenant found. Redirecting..." />
-        </div>
-      </div>
-    );
-  }
-
-  const showSelector = tenants.length > 1;
+  const showSelector = tenants.length >= 1;
   const showEmpty = !loadingTenants && tenants.length === 0;
 
   return (
@@ -122,7 +101,9 @@ const TenantSelect = () => {
         <Card title="Select tenant" subtitle="Enter the tenant id to continue">
           {showEmpty ? (
             <div className="u-grid u-gap-3">
-              <div className="u-text-muted">No tenants found.</div>
+              <div className="u-text-muted">
+                No companies found. Make sure the dev tenants endpoint is enabled or seed a tenant.
+              </div>
               <div className="u-flex u-justify-end">
                 <Button type="button" onClick={() => window.location.reload()}>
                   Reload
@@ -143,13 +124,15 @@ const TenantSelect = () => {
                 />
                 <div className="u-flex u-justify-end">
                   <Button type="submit" data-testid="tenant-save-button">
-                    Save
+                    Select company
                   </Button>
                 </div>
               </form>
               {showSelector ? (
                 <div className="u-grid u-gap-2 u-mt-3">
-                  <div className="u-text-muted">Quick select (dev only)</div>
+                  <div className="u-text-muted">
+                    {tenants.length === 1 ? "Only one company available" : "Quick select (dev only)"}
+                  </div>
                   <div className="u-flex u-wrap u-gap-2">
                     {tenants.map((tenant) => (
                       <Button
