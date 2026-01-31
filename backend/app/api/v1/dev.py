@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from datetime import date
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -10,8 +11,18 @@ from sqlalchemy import func, select
 from app.api import deps
 from app.core.exceptions import AppException
 from app.core.permissions import ADMIN, OWNER, require_roles
-from app.schemas.common import BaseSchema
+from app.initial_data import seed_tenant
+from app.models.account import Account
 from app.models.tenant import Tenant
+from app.models.unit import InventoryUnit
+from app.schemas.common import BaseSchema
+from app.services import (
+    customer_service,
+    inventory_unit_service,
+    product_service,
+    sales_invoice_service,
+    vendor_service,
+)
 from app.use_cases.auth.register import register_tenant_admin
 
 router = APIRouter(prefix="/dev")
@@ -49,6 +60,7 @@ class BootstrapAdmin(BaseSchema):
 class BootstrapRequest(BaseSchema):
     tenant: BootstrapTenant | None = None
     admin: BootstrapAdmin | None = None
+    seed_demo: bool | None = None
 
 
 def _ensure_dev(settings) -> None:
@@ -58,6 +70,104 @@ def _ensure_dev(settings) -> None:
     if env == "development" or app_env == "dev" or allow_flag:
         return
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Dev endpoints are not enabled")
+
+
+async def _ensure_base_unit(session: AsyncSession, tenant_id: UUID) -> InventoryUnit:
+    result = await session.execute(
+        select(InventoryUnit)
+        .where(InventoryUnit.tenant_id == tenant_id)
+        .order_by(InventoryUnit.created_at.asc())
+    )
+    unit = result.scalars().first()
+    if unit:
+        return unit
+    return await inventory_unit_service.create_unit(
+        session,
+        tenant_id,
+        {
+            "code": "EA",
+            "name": "Each",
+            "ratio_to_base": "1",
+        },
+    )
+
+
+async def _ensure_revenue_account(session: AsyncSession, tenant_id: UUID) -> Account:
+    result = await session.execute(
+        select(Account).where(Account.tenant_id == tenant_id, Account.code == "4000")
+    )
+    account = result.scalar_one_or_none()
+    if account:
+        return account
+    account = Account(
+        tenant_id=tenant_id,
+        code="4000",
+        name="Sales Revenue",
+        type="INCOME",
+        normal_balance="credit",
+        is_system=True,
+        is_active=True,
+    )
+    session.add(account)
+    await session.commit()
+    await session.refresh(account)
+    return account
+
+
+async def _seed_demo_data(session: AsyncSession, tenant_id: UUID) -> None:
+    tenant = await session.get(Tenant, tenant_id)
+    if tenant:
+        await seed_tenant(session, tenant)
+
+    suffix = uuid4().hex[:6]
+    customer = await customer_service.create_customer(
+        session,
+        tenant_id,
+        {
+            "name": f"Demo Customer {suffix}",
+            "email": f"customer-{suffix}@example.com",
+        },
+    )
+    await vendor_service.create_vendor(
+        session,
+        tenant_id,
+        {
+            "name": f"Demo Vendor {suffix}",
+            "email": f"vendor-{suffix}@example.com",
+        },
+    )
+    base_unit = await _ensure_base_unit(session, tenant_id)
+    product = await product_service.create_product(
+        session,
+        tenant_id,
+        {
+            "name": f"Demo Product {suffix}",
+            "sku": f"DEMO-{suffix}",
+            "unit_price": "100.00",
+            "is_service": True,
+            "base_unit_id": base_unit.id,
+        },
+    )
+    revenue_account = await _ensure_revenue_account(session, tenant_id)
+    invoice_payload = {
+        "customer_id": customer.id,
+        "invoice_date": date.today(),
+        "due_date": date.today(),
+        "invoice_no": f"INV-{suffix}",
+        "lines": [
+            {
+                "line_no": 1,
+                "description": "Demo line item",
+                "quantity": "1",
+                "unit_price": "100.00",
+                "product_id": product.id,
+                "unit_id": base_unit.id,
+                "revenue_account_id": revenue_account.id,
+                "vat_rate": "0",
+            }
+        ],
+    }
+    await sales_invoice_service.create_sales_invoice(session, tenant_id, invoice_payload)
 
 
 @router.get("/info", response_model=DevInfo)
@@ -100,6 +210,7 @@ async def bootstrap(
     settings=Depends(deps.get_settings),
 ):
     _ensure_dev(settings)
+    seed_demo = bool(payload and payload.seed_demo)
     existing = await session.scalar(select(func.count()).select_from(Tenant))
     if existing and existing > 0:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Tenant already exists")
@@ -129,9 +240,12 @@ async def bootstrap(
     )
 
     result = await register_tenant_admin(bootstrap_payload, request, session, settings)
+    tenant_id = UUID(str(result["tenant"]["id"]))
+    if seed_demo:
+        await _seed_demo_data(session, tenant_id)
     tokens = result["tokens"].token.model_dump()
     return {
-        "tenant_id": result["tenant"]["id"],
+        "tenant_id": str(tenant_id),
         "admin_email": admin_email,
         "access_token": tokens.get("access_token"),
         "tenant": result["tenant"],
