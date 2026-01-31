@@ -258,9 +258,19 @@ def run() -> None:
 
         _log("TEST 6: rate limit public portal summary")
         rate_limited = False
+        attempts: list[dict[str, str | int | None]] = []
+        summary_path = f"/api/v1/portal/{raw_token}/summary"
         for idx in range(1, 30):
-            response = client.get(f"/api/v1/portal/{raw_token}/summary")
+            response = client.get(summary_path)
             _require_request_id(response, "portal_summary")
+            attempts.append(
+                {
+                    "attempt": idx,
+                    "status": response.status_code,
+                    "retry_after": response.headers.get("Retry-After"),
+                    "x_forwarded_for": response.request.headers.get("X-Forwarded-For"),
+                }
+            )
             if response.status_code == 429:
                 rate_limited = True
                 if response.headers.get("Retry-After") is None:
@@ -273,6 +283,8 @@ def run() -> None:
                 )
 
         if not rate_limited:
+            print(f"Rate limit debug: path={summary_path}")
+            print("Rate limit debug: attempts=", attempts)
             raise VerificationError("rate limit was not enforced on portal summary")
 
     _log("PASS: Sprint 26 production readiness")

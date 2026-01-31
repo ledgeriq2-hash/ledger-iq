@@ -1,17 +1,18 @@
 from __future__ import annotations
 
 import os
-from uuid import UUID
+from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.api import deps
 from app.core.exceptions import AppException
 from app.core.permissions import ADMIN, OWNER, require_roles
 from app.schemas.common import BaseSchema
 from app.models.tenant import Tenant
+from app.use_cases.auth.register import register_tenant_admin
 
 router = APIRouter(prefix="/dev")
 
@@ -30,6 +31,24 @@ class DevTenantSummary(BaseSchema):
 
 class DevTenantListResponse(BaseSchema):
     items: list[DevTenantSummary]
+
+
+class BootstrapTenant(BaseSchema):
+    name: str | None = None
+    slug: str | None = None
+    plan: str | None = None
+    settings_json: dict | None = None
+
+
+class BootstrapAdmin(BaseSchema):
+    email: str | None = None
+    password: str | None = None
+    full_name: str | None = None
+
+
+class BootstrapRequest(BaseSchema):
+    tenant: BootstrapTenant | None = None
+    admin: BootstrapAdmin | None = None
 
 
 def _ensure_dev(settings) -> None:
@@ -71,6 +90,52 @@ async def list_tenants(
             for tenant in tenants
         ]
     )
+
+
+@router.post("/bootstrap", status_code=status.HTTP_201_CREATED)
+async def bootstrap(
+    request: Request,
+    payload: BootstrapRequest | None = None,
+    session: AsyncSession = Depends(deps.get_db),
+    settings=Depends(deps.get_settings),
+):
+    _ensure_dev(settings)
+    existing = await session.scalar(select(func.count()).select_from(Tenant))
+    if existing and existing > 0:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Tenant already exists")
+
+    suffix = uuid4().hex[:6]
+    tenant_payload = payload.tenant if payload and payload.tenant else BootstrapTenant()
+    admin_payload = payload.admin if payload and payload.admin else BootstrapAdmin()
+
+    tenant_name = tenant_payload.name or f"Demo Company {suffix}"
+    tenant_slug = tenant_payload.slug or f"demo-{suffix}"
+    admin_email = admin_payload.email or f"admin-{tenant_slug}@example.com"
+    admin_password = admin_payload.password or "Test1234"
+    admin_full_name = admin_payload.full_name or "Demo Admin"
+
+    bootstrap_payload = BootstrapRequest(
+        tenant=BootstrapTenant(
+            name=tenant_name,
+            slug=tenant_slug,
+            plan=tenant_payload.plan,
+            settings_json=tenant_payload.settings_json,
+        ),
+        admin=BootstrapAdmin(
+            email=admin_email,
+            password=admin_password,
+            full_name=admin_full_name,
+        ),
+    )
+
+    result = await register_tenant_admin(bootstrap_payload, request, session, settings)
+    tokens = result["tokens"].token.model_dump()
+    return {
+        "tenant_id": result["tenant"]["id"],
+        "admin_email": admin_email,
+        "access_token": tokens.get("access_token"),
+        "tenant": result["tenant"],
+    }
 
 
 @router.post("/reset-cache", status_code=status.HTTP_501_NOT_IMPLEMENTED)

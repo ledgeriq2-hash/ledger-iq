@@ -13,17 +13,18 @@ logger = logging.getLogger(__name__)
 
 PUBLIC_RATE_LIMIT: Final[int] = 20
 PUBLIC_LIMITED_ROUTES: Final[dict[str, str]] = {
-    "summary": r"^/api/v1/portal/[^/]+/summary$",
-    "invoices": r"^/api/v1/portal/[^/]+/invoices$",
-    "statement": r"^/api/v1/portal/[^/]+/statement$",
+    "summary": r"^/(?:api/)?(?:v1/)?portal/[^/]+/summary/?$",
+    "invoices": r"^/(?:api/)?(?:v1/)?portal/[^/]+/invoices/?$",
+    "statement": r"^/(?:api/)?(?:v1/)?portal/[^/]+/statement/?$",
 }
 
 
 def _route_id(path: str) -> str | None:
     import re
 
+    normalized = (path or "").lower()
     for name, pattern in PUBLIC_LIMITED_ROUTES.items():
-        if re.match(pattern, path):
+        if re.match(pattern, normalized):
             return name
     return None
 

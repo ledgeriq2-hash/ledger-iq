@@ -99,7 +99,7 @@ export const AuthProvider = ({ children }) => {
       .then((res) => {
         if (!active) return;
         const items = Array.isArray(res?.data?.items) ? res.data.items : [];
-        const current = loadStored("tenant_id");
+        let current = loadStored("tenant_id");
         const legacySlug = loadStored("tenant_slug");
         const isCurrentValid = current && items.some((tenantItem) => tenantItem.id === current);
         if (isCurrentValid) {
@@ -123,6 +123,10 @@ export const AuthProvider = ({ children }) => {
             localStorage.removeItem("tenant_id");
           }
           setTenantId(null);
+          current = null;
+        }
+        if (!current && items.length === 1) {
+          setTenantId(items[0].id);
         }
       })
       .catch(() => {});

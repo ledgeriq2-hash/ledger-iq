@@ -4,7 +4,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import Card from "../../components/ui/Card.jsx";
 import Input from "../../components/ui/Input.jsx";
 import Button from "../../components/ui/Button.jsx";
-import axiosClient from "../../api/index.js";
+import axiosClient, { ACCESS_TOKEN_STORAGE_KEY } from "../../api/index.js";
 import useAuth from "../../hooks/useAuth.js";
 
 const getTenantId = () =>
@@ -23,6 +23,8 @@ const TenantSelect = () => {
   const [error, setError] = useState("");
   const [tenants, setTenants] = useState([]);
   const [loadingTenants, setLoadingTenants] = useState(true);
+  const [bootstrapping, setBootstrapping] = useState(false);
+  const [bootstrapError, setBootstrapError] = useState("");
 
   useEffect(() => {
     if (tenantId) navigate(redirectTo, { replace: true });
@@ -53,6 +55,61 @@ const TenantSelect = () => {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (loadingTenants || tenantId) return;
+    if (tenants.length === 1) {
+      setTenantId(tenants[0].id);
+      setError("");
+      navigate(redirectTo, { replace: true });
+    }
+  }, [loadingTenants, tenantId, tenants, setTenantId, navigate, redirectTo]);
+
+  const handleBootstrap = async () => {
+    setBootstrapping(true);
+    setBootstrapError("");
+    try {
+      const suffix = Date.now().toString(36);
+      const payload = {
+        tenant: {
+          name: `Demo Company ${suffix}`,
+          slug: `demo-${suffix}`,
+        },
+        admin: {
+          email: `admin-${suffix}@example.com`,
+          password: "Test1234",
+          full_name: "Demo Admin",
+        },
+      };
+      const res = await axiosClient.request({
+        method: "POST",
+        url: "/v1/dev/bootstrap",
+        data: payload,
+        skipTenant: true,
+        skipAuth: true,
+      });
+      const createdId = res?.data?.tenant_id || res?.data?.tenant?.id || "";
+      if (!createdId) {
+        throw new Error("Bootstrap response missing tenant_id");
+      }
+      const accessToken = res?.data?.access_token;
+      if (accessToken && typeof window !== "undefined") {
+        localStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, accessToken);
+      }
+      setTenantId(createdId);
+      setTenantIdInput(createdId);
+      navigate(redirectTo, { replace: true });
+    } catch (err) {
+      const message =
+        err?.response?.data?.detail ||
+        err?.response?.data?.error?.message ||
+        err?.message ||
+        "Failed to bootstrap tenant.";
+      setBootstrapError(String(message));
+    } finally {
+      setBootstrapping(false);
+    }
+  };
 
   const onSave = (event) => {
     event.preventDefault();
@@ -104,7 +161,11 @@ const TenantSelect = () => {
               <div className="u-text-muted">
                 No companies found. Make sure the dev tenants endpoint is enabled or seed a tenant.
               </div>
+              {bootstrapError ? <div className="u-text-danger">{bootstrapError}</div> : null}
               <div className="u-flex u-justify-end">
+                <Button type="button" variant="ghost" onClick={handleBootstrap} disabled={bootstrapping}>
+                  {bootstrapping ? "Creating..." : "Create demo company"}
+                </Button>
                 <Button type="button" onClick={() => window.location.reload()}>
                   Reload
                 </Button>
