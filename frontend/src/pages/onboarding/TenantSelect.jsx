@@ -4,18 +4,20 @@ import { useLocation, useNavigate } from "react-router-dom";
 import Card from "../../components/ui/Card.jsx";
 import Input from "../../components/ui/Input.jsx";
 import Button from "../../components/ui/Button.jsx";
-import axiosClient, { ACCESS_TOKEN_STORAGE_KEY } from "../../api/index.js";
+import axiosClient from "../../api/index.js";
 import useAuth from "../../hooks/useAuth.js";
 
 const getTenantId = () =>
-  (typeof window !== "undefined" ? localStorage.getItem("tenant_id") : null) || import.meta.env.VITE_TENANT_ID;
+  (typeof window !== "undefined" ? localStorage.getItem("tenant_id") : null) ||
+  (typeof window !== "undefined" ? localStorage.getItem("ledgeriqlastTenantId") : null) ||
+  import.meta.env.VITE_TENANT_ID;
 
 const isUuid = (value) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 
 const TenantSelect = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { tenantId, setTenantId } = useAuth();
+  const { tenantId, setTenantId, bootstrapDemoTenant } = useAuth();
   const redirectTo = location.state?.from || "/dashboard";
 
   const storedTenantId = useMemo(() => getTenantId(), []);
@@ -69,36 +71,12 @@ const TenantSelect = () => {
     setBootstrapping(true);
     setBootstrapError("");
     try {
-      const suffix = Date.now().toString(36);
-      const payload = {
-        tenant: {
-          name: `Demo Company ${suffix}`,
-          slug: `demo-${suffix}`,
-        },
-        admin: {
-          email: `admin-${suffix}@example.com`,
-          password: "Test1234",
-          full_name: "Demo Admin",
-        },
-      };
-      const res = await axiosClient.request({
-        method: "POST",
-        url: "/v1/dev/bootstrap",
-        data: payload,
-        skipTenant: true,
-        skipAuth: true,
-      });
-      const createdId = res?.data?.tenant_id || res?.data?.tenant?.id || "";
+      const res = await bootstrapDemoTenant();
+      const createdId = res?.tenant_id || res?.tenant?.id || "";
       if (!createdId) {
         throw new Error("Bootstrap response missing tenant_id");
       }
-      const accessToken = res?.data?.access_token;
-      if (accessToken && typeof window !== "undefined") {
-        localStorage.setItem(ACCESS_TOKEN_STORAGE_KEY, accessToken);
-      }
-      setTenantId(createdId);
       setTenantIdInput(createdId);
-      navigate(redirectTo, { replace: true });
     } catch (err) {
       const message =
         err?.response?.data?.detail ||

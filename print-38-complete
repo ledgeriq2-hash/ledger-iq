@@ -1,0 +1,17 @@
+warning: in the working copy of 'backend/app/api/deps.py', CRLF will be replaced by LF the next time Git touches it
+warning: in the working copy of 'backend/app/middleware/tenant.py', CRLF will be replaced by LF the next time Git touches it
+warning: in the working copy of 'backend/app/services/user_service.py', CRLF will be replaced by LF the next time Git touches it
+warning: in the working copy of 'frontend/src/api/index.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/components/layout/TenantSelector.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/contexts/AuthContext.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/layouts/MainLayout.jsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'frontend/src/pages/onboarding/TenantSelect.jsx', LF will be replaced by CRLF the next time Git touches it
+ backend/app/api/deps.py                           |  47 [32m++++[m[31m--[m
+ backend/app/middleware/tenant.py                  |  54 [32m+++++[m[31m--[m
+ backend/app/services/user_service.py              |  14 [32m++[m
+ frontend/src/api/index.js                         |  13 [32m+[m[31m-[m
+ frontend/src/components/layout/TenantSelector.jsx |   7 [32m+[m[31m-[m
+ frontend/src/contexts/AuthContext.jsx             | 183 [32m++++++++++++++++[m[31m------[m
+ frontend/src/layouts/MainLayout.jsx               |  47 [32m+++++[m[31m-[m
+ frontend/src/pages/onboarding/TenantSelect.jsx    |  36 [32m+[m[31m----[m
+ 8 files changed, 293 insertions(+), 108 deletions(-)

@@ -2,6 +2,7 @@ import axios from "axios";
 
 const DEFAULT_TIMEOUT = 15000;
 const ACCESS_TOKEN_KEY = "access_token";
+const LAST_TENANT_ID_KEY = "ledgeriqlastTenantId";
 const API_BASE_PATH = "/api";
 const API_VERSION_PREFIX = "/v1";
 const LEGACY_API_PREFIX = `${API_BASE_PATH}${API_VERSION_PREFIX}`;
@@ -156,6 +157,7 @@ const clearTenantContext = () => {
   if (typeof window === "undefined") return;
   localStorage.removeItem("tenant_id");
   localStorage.removeItem("actor_id");
+  localStorage.removeItem(LAST_TENANT_ID_KEY);
 };
 
 const normalizeError = (error) => {
@@ -208,12 +210,11 @@ axiosClient.interceptors.request.use(
     config.headers = config.headers || {};
 
     if (!shouldSkipTenant(config.url, config)) {
-      if (!tenantId) {
-        return Promise.reject(TENANT_NOT_SET_ERROR);
-      }
-      config.headers["X-Tenant-Id"] = tenantId;
-      if (actorId) {
-        config.headers["X-Actor-Id"] = actorId;
+      if (tenantId) {
+        config.headers["X-Tenant-Id"] = tenantId;
+        if (actorId) {
+          config.headers["X-Actor-Id"] = actorId;
+        }
       }
     }
 

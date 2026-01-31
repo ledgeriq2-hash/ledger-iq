@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import enforce_password_policy, get_password_hash, verify_password
 from app.models.refresh_token import RefreshToken
+from app.models.tenant import Tenant
 from app.models.user import User
 from app.utils.pagination import normalize_pagination
 
@@ -46,6 +47,18 @@ async def list_users(
 async def get_user(session: AsyncSession, tenant_id: UUID, user_id: UUID) -> User | None:
     result = await session.execute(select(User).where(User.id == user_id, User.tenant_id == tenant_id))
     return result.scalar_one_or_none()
+
+
+async def list_accessible_tenant_ids(
+    session: AsyncSession,
+    user: User,
+    *,
+    limit: int = 2,
+) -> list[UUID]:
+    if not user.is_superuser:
+        return [user.tenant_id] if user.tenant_id else []
+    result = await session.execute(select(Tenant.id).order_by(Tenant.created_at.desc()).limit(limit))
+    return [tenant_id for tenant_id in result.scalars().all() if tenant_id]
 
 
 async def get_user_by_email(session: AsyncSession, tenant_id: UUID, email: str) -> User | None:
@@ -203,6 +216,7 @@ async def update_user_password(session: AsyncSession, tenant_id: UUID, user_id: 
 __all__ = [
     "list_users",
     "get_user",
+    "list_accessible_tenant_ids",
     "get_user_by_email",
     "create_user",
     "update_user",

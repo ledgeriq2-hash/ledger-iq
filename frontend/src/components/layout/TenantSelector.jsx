@@ -21,11 +21,16 @@ const TenantSelector = () => {
   const handleClear = () => {
     setTenantId(null);
     setValue("");
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("ledgeriqlastTenantId");
+    }
   };
 
   return (
     <form className="tenantSelector" onSubmit={handleSubmit}>
-      <span className="tenantSelectorLabel">Tenant</span>
+      <span className="tenantSelectorLabel">
+        {tenant?.name ? `Company: ${tenant.name}` : "Company"}
+      </span>
       <input
         className="tenantSelectorInput"
         value={value}

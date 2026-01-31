@@ -9,6 +9,7 @@ from fastapi import Depends, Header, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings as _get_settings
+from app.core.exceptions import AppException
 from app.core.redis import get_user_tokens_version, is_token_revoked
 from app.core.security import decode_token
 from app.core.redis import (
@@ -57,7 +58,7 @@ async def _resolve_user_from_token(
     request: Request,
     session: AsyncSession,
     token: str,
-    tenant_header: str,
+    tenant_header: str | None,
 ) -> User:
     try:
         payload = decode_token(token)
@@ -76,12 +77,16 @@ async def _resolve_user_from_token(
     try:
         user_id = uuid.UUID(str(sub))
         tenant_id = uuid.UUID(str(tenant_claim))
-        tenant_header_id = uuid.UUID(str(tenant_header))
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token claims") from exc
 
-    if tenant_id != tenant_header_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant access denied")
+    if tenant_header:
+        try:
+            tenant_header_id = uuid.UUID(str(tenant_header))
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid X-Tenant-Id header") from exc
+        if tenant_id != tenant_header_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Tenant access denied")
 
     if await is_token_revoked(payload.get("jti")):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token has been revoked")
@@ -104,7 +109,7 @@ async def _resolve_user_from_token(
 async def get_current_user(
     request: Request,
     session: Annotated[AsyncSession, Depends(get_db)],
-    x_tenant_id: Annotated[str, Header(alias="X-Tenant-Id")],
+    x_tenant_id: Annotated[str | None, Header(alias="X-Tenant-Id")] = None,
     actor_id: Annotated[str | None, Header(alias="X-Actor-Id")] = None,
 ) -> User | DevUser:
     auth_header = request.headers.get("Authorization", "")
@@ -118,6 +123,14 @@ async def get_current_user(
 
     if not _is_dev_runtime(settings):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authorization required")
+
+    if not x_tenant_id:
+        raise AppException(
+            code="TENANT_REQUIRED",
+            message="Tenant header is required",
+            details={"hint": "Select a company (tenant) or create a demo company"},
+            http_status=status.HTTP_400_BAD_REQUEST,
+        )
 
     try:
         tenant_uuid = uuid.UUID(x_tenant_id)
@@ -146,14 +159,24 @@ async def get_current_active_user(
 
 async def get_current_tenant(
     request: Request,
-    x_tenant_id: Annotated[str, Header(alias="X-Tenant-Id")],
+    x_tenant_id: Annotated[str | None, Header(alias="X-Tenant-Id")] = None,
 ) -> uuid.UUID:
-    try:
-        tenant_uuid = uuid.UUID(x_tenant_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid X-Tenant-Id header") from exc
-    request.state.tenant_id = tenant_uuid
-    return tenant_uuid
+    if x_tenant_id:
+        try:
+            tenant_uuid = uuid.UUID(x_tenant_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid X-Tenant-Id header") from exc
+        request.state.tenant_id = tenant_uuid
+        return tenant_uuid
+    tenant_id = getattr(request.state, "tenant_id", None)
+    if tenant_id:
+        return tenant_id
+    raise AppException(
+        code="TENANT_REQUIRED",
+        message="Tenant header is required",
+        details={"hint": "Select a company (tenant) or create a demo company"},
+        http_status=status.HTTP_400_BAD_REQUEST,
+    )
 
 
 __all__ = [
