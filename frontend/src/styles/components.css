@@ -2082,3 +2082,263 @@
   border-color: var(--color-primary);
   background: color-mix(in srgb, var(--color-primary) 14%, transparent);
 }
+
+.invoicesCard {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.invoicesHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.invoicesHeaderTitle {
+  margin: 0;
+  font-size: var(--font-size-5);
+  font-weight: 800;
+}
+
+.invoicesSubtitle {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--font-size-2);
+  font-weight: 600;
+}
+
+.invoicesSummaryGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-3);
+}
+
+.summaryCard {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4);
+  box-shadow: var(--shadow-1);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-height: 130px;
+}
+
+.summaryCardLabel {
+  font-size: var(--font-size-1);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-muted);
+  font-weight: 700;
+}
+
+.summaryCardCount {
+  font-size: var(--font-size-3);
+  font-weight: 800;
+  color: var(--color-text);
+}
+
+.summaryCardAmount {
+  color: var(--color-muted);
+  font-size: var(--font-size-1);
+}
+
+.summaryCardAccent {
+  width: 42px;
+  height: 4px;
+  border-radius: var(--radius-sm);
+  margin-top: var(--space-2);
+  background: var(--color-border);
+}
+
+.summaryCard[data-status="draft"] .summaryCardAccent {
+  background: var(--color-secondary);
+}
+
+.summaryCard[data-status="sent"] .summaryCardAccent {
+  background: var(--color-accent);
+}
+
+.summaryCard[data-status="overdue"] .summaryCardAccent {
+  background: var(--color-danger);
+}
+
+.summaryCard[data-status="paid"] .summaryCardAccent {
+  background: var(--color-success);
+}
+
+.filtersContainer {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.filtersTop {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  align-items: center;
+  justify-content: space-between;
+}
+
+.filtersGroup {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.searchField {
+  min-width: 220px;
+  max-width: 360px;
+  flex: 1;
+}
+
+.filtersExtras {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.toggleGroup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.toggleGroupTrigger {
+  border-radius: var(--radius-lg);
+  text-transform: capitalize;
+}
+
+.filtersExtrasMessage {
+  color: var(--color-muted);
+  font-size: var(--font-size-1);
+}
+
+.filtersTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.invoiceCell {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.invoiceLabel {
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.invoiceReference {
+  font-size: var(--font-size-1);
+  color: var(--color-muted);
+}
+
+.tableWrapper {
+  overflow-x: auto;
+}
+
+.rowActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.dropdownMenu {
+  position: relative;
+  display: inline-flex;
+}
+
+.dropdownMenuList {
+  position: absolute;
+  top: calc(100% + var(--space-2));
+  right: 0;
+  min-width: 150px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-2);
+  padding: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  z-index: 20;
+}
+
+.dropdownMenuList-left {
+  right: auto;
+  left: 0;
+}
+
+.dropdownMenuItem {
+  background: transparent;
+  border: none;
+  color: var(--color-text);
+  text-align: left;
+  font-size: var(--font-size-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.dropdownMenuItem:not(:disabled):hover {
+  background: color-mix(in srgb, var(--color-border) 28%, var(--color-bg));
+}
+
+.dropdownMenuItem:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.dialogBackdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 9, 19, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-4);
+  z-index: 60;
+}
+
+.dialogPanel {
+  background: var(--color-card);
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-2);
+  padding: var(--space-5);
+  width: min(420px, 100%);
+  display: grid;
+  gap: var(--space-4);
+}
+
+.dialogTitle {
+  margin: 0;
+  font-size: var(--font-size-3);
+}
+
+.dialogDescription {
+  margin: 0;
+  color: var(--color-muted);
+  font-size: var(--font-size-1);
+}
+
+.dialogBody {
+  color: var(--color-text);
+  font-size: var(--font-size-2);
+}
+
+.dialogActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}

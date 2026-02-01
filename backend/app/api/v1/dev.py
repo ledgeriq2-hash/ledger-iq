@@ -13,6 +13,7 @@ from app.core.exceptions import AppException
 from app.core.permissions import ADMIN, OWNER, require_roles
 from app.initial_data import seed_tenant
 from app.models.account import Account
+from app.models.role import Role
 from app.models.tenant import Tenant
 from app.models.unit import InventoryUnit
 from app.schemas.common import BaseSchema
@@ -21,6 +22,7 @@ from app.services import (
     inventory_unit_service,
     product_service,
     sales_invoice_service,
+    user_service,
     vendor_service,
 )
 from app.use_cases.auth.register import register_tenant_admin
@@ -250,6 +252,42 @@ async def bootstrap(
         "access_token": tokens.get("access_token"),
         "tenant": result["tenant"],
     }
+
+
+@router.post("/ensure-owner")
+async def ensure_owner(
+    request: Request,
+    tenant_id: UUID = Depends(deps.get_current_tenant),
+    session: AsyncSession = Depends(deps.get_db),
+    settings=Depends(deps.get_settings),
+    current_user=Depends(deps.get_current_active_user),
+):
+    _ensure_dev(settings)
+    user_id = getattr(current_user, "id", None)
+    if not user_id:
+        raise AppException(
+            code="dev_user_missing",
+            message="Dev user must be authenticated to ensure owner access",
+            http_status=status.HTTP_400_BAD_REQUEST,
+        )
+    owner_role = await session.scalar(
+        select(Role).where(Role.tenant_id == tenant_id, func.upper(Role.name) == OWNER.upper())
+    )
+    if not owner_role:
+        owner_role = Role(
+            tenant_id=tenant_id,
+            name=OWNER.upper(),
+            permissions_json={"all": True},
+        )
+        session.add(owner_role)
+        await session.flush()
+    await user_service.update_user(
+        session,
+        tenant_id,
+        user_id,
+        {"role_id": owner_role.id, "is_superuser": True},
+    )
+    return {"status": "owner_granted", "role_id": str(owner_role.id)}
 
 
 @router.post("/reset-cache", status_code=status.HTTP_501_NOT_IMPLEMENTED)
